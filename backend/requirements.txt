@@ -1,0 +1,29 @@
+# Web framework and server
+fastapi==0.103.1
+uvicorn==0.23.2
+pydantic==2.3.0
+python-dotenv==1.0.0
+
+# HTTP client (updated to be compatible with supabase)
+httpx>=0.26.0
+
+# Authentication and security
+python-jose==3.3.0
+passlib==1.7.4
+python-multipart==0.0.6
+
+# Additional features
+fastapi-mail==1.4.0
+sse-starlette==1.6.5
+
+# Database clients
+supabase==2.16.0
+
+# Database ORM and migrations
+alembic==1.12.1
+sqlalchemy==2.0.23
+asyncpg==0.28.0
+greenlet==2.0.2  # Required for async SQLAlchemy
+
+# Testing
+pytest==7.4.0

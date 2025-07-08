@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Booking Update</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: #f39c12;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            border-radius: 5px 5px 0 0;
+        }
+        .content {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 0 0 5px 5px;
+        }
+        .booking-details {
+            background-color: white;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .flight-info {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.8em;
+            color: #666;
+        }
+        .important {
+            color: #d9534f;
+            font-weight: bold;
+        }
+        .button {
+            background-color: #f39c12;
+            color: white;
+            padding: 10px 15px;
+            text-decoration: none;
+            border-radius: 5px;
+            display: inline-block;
+            margin-top: 15px;
+        }
+        .cancelled {
+            background-color: #d9534f;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Booking {{ update_type|title }}</h1>
+    </div>
+    <div class="content">
+        <p>Dear {{ user_name }},</p>
+        
+        {% if update_type == 'cancelled' %}
+        <p>Your booking with reference <strong>{{ booking.booking_reference }}</strong> has been cancelled as requested.</p>
+        <p>If you did not request this cancellation, please contact our customer support immediately.</p>
+        {% elif update_type == 'modified' %}
+        <p>Your booking with reference <strong>{{ booking.booking_reference }}</strong> has been modified.</p>
+        <p>Please review the updated details below:</p>
+        {% else %}
+        <p>Your booking with reference <strong>{{ booking.booking_reference }}</strong> has been updated.</p>
+        {% endif %}
+        
+        <div class="booking-details">
+            <h2>Updated Booking Details</h2>
+            <p><strong>Booking Reference:</strong> {{ booking.booking_reference }}</p>
+            <p><strong>Trip Type:</strong> {{ booking.trip_type }}</p>
+            <p><strong>Status:</strong> 
+                {% if booking.status == 'cancelled' %}
+                <span class="cancelled">Cancelled</span>
+                {% else %}
+                {{ booking.status }}
+                {% endif %}
+            </p>
+            <p><strong>Total Amount:</strong> ${{ "%.2f"|format(booking.total_amount) }}</p>
+            <p><strong>Last Updated:</strong> {{ booking.updated_at }}</p>
+        </div>
+        
+        {% if booking.status != 'cancelled' %}
+        <h2>Flight Information</h2>
+        {% for flight in booking.flights %}
+        <div class="flight-info">
+            <h3>{{ "Return Flight" if flight.is_return_flight else "Outbound Flight" }}</h3>
+            <p><strong>Flight Number:</strong> {{ flight.flight.airline.iata_code }}{{ flight.flight.flight_number }}</p>
+            <p><strong>Airline:</strong> {{ flight.flight.airline.name }}</p>
+            <p><strong>From:</strong> {{ flight.flight.origin_airport.city }} ({{ flight.flight.origin_airport.iata_code }})</p>
+            <p><strong>To:</strong> {{ flight.flight.destination_airport.city }} ({{ flight.flight.destination_airport.iata_code }})</p>
+            <p><strong>Departure:</strong> {{ flight.flight.departure_time }}</p>
+            <p><strong>Arrival:</strong> {{ flight.flight.arrival_time }}</p>
+            <p><strong>Status:</strong> {{ flight.flight.status }}</p>
+        </div>
+        {% endfor %}
+        {% endif %}
+        
+        {% if update_type == 'cancelled' %}
+        <p>If you wish to book a new flight, please visit our website or contact our customer support.</p>
+        {% else %}
+        <a href="https://skybound-journeys.com/bookings/{{ booking.id }}" class="button">View Updated Booking Online</a>
+        {% endif %}
+        
+        <p>If you have any questions or concerns regarding this update, please contact our customer support team.</p>
+        
+        <p>Thank you for choosing SkyBound Journeys!</p>
+    </div>
+    <div class="footer">
+        <p>&copy; {{ now.year }} SkyBound Journeys. All rights reserved.</p>
+        <p>This is an automated message, please do not reply to this email.</p>
+    </div>
+</body>
+</html>
