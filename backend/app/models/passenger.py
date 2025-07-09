@@ -1,7 +1,7 @@
 """
 Passenger model for SQLAlchemy ORM
 """
-from sqlalchemy import Column, String, ForeignKey, Date, CheckConstraint
+from sqlalchemy import Column, String, ForeignKey, Date, CheckConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import text
 from sqlalchemy.orm import relationship
@@ -24,11 +24,12 @@ class Passenger(Base, TimestampMixin):
     
     # Relationships
     booking = relationship("Booking", back_populates="passengers")
-    
+
     # Constraints
     __table_args__ = (
         CheckConstraint("type IN ('adult', 'child', 'infant')"),
         CheckConstraint("cabin_class IN ('economy', 'premium-economy', 'business', 'first')"),
+        Index('ix_passengers_booking_id', 'booking_id'),
     )
     
     def __repr__(self):

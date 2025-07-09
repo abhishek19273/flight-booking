@@ -1,7 +1,7 @@
 """
 Booking models for SQLAlchemy ORM
 """
-from sqlalchemy import Column, String, ForeignKey, Numeric, Boolean, CheckConstraint, UniqueConstraint
+from sqlalchemy import Column, String, ForeignKey, Numeric, Boolean, CheckConstraint, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import text
 from sqlalchemy.orm import relationship
@@ -29,6 +29,7 @@ class Booking(Base, TimestampMixin):
     __table_args__ = (
         CheckConstraint("trip_type IN ('one-way', 'round-trip')"),
         CheckConstraint("status IN ('confirmed', 'cancelled', 'pending')"),
+        Index('ix_bookings_user_id_created_at', 'user_id', 'created_at'),
     )
     
     def __repr__(self):

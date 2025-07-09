@@ -42,14 +42,11 @@ async def init_db():
         logger.error(f"Failed to connect to database with SQLAlchemy: {e}", exc_info=True)
         raise
     
-    # Legacy Supabase client initialization (will be phased out)
+    # Supabase client initialization for auth and legacy features
     if SUPABASE_URL and SUPABASE_KEY:
-        # Show deprecation warning about Supabase client
-        warnings.warn(
-            "Supabase client usage is deprecated and will be removed in a future version. "
-            "Use SQLAlchemy ORM models and async sessions instead.",
-            DeprecationWarning, stacklevel=2
-        )
+        # Note: While we're using SQLAlchemy for data access, we still need Supabase for auth
+        logger.info("Initializing Supabase client for authentication and legacy features")
+
         
         # Create Supabase client if it doesn't exist
         if supabase_client is None:

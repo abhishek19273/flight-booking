@@ -1,7 +1,7 @@
 """
 Payment model for SQLAlchemy ORM
 """
-from sqlalchemy import Column, String, ForeignKey, Numeric, CheckConstraint
+from sqlalchemy import Column, String, ForeignKey, Numeric, CheckConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import text
 from sqlalchemy.orm import relationship
@@ -26,6 +26,8 @@ class Payment(Base, TimestampMixin):
     # Constraints
     __table_args__ = (
         CheckConstraint("status IN ('pending', 'completed', 'failed', 'refunded')"),
+        Index('ix_payments_booking_id', 'booking_id'),
+        Index('ix_payments_transaction_id', 'transaction_id'),
     )
     
     def __repr__(self):

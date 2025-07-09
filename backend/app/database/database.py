@@ -17,25 +17,51 @@ logger = logging.getLogger("database")
 # Load environment variables
 load_dotenv()
 
-# Get PostgreSQL connection details
+# Get PostgreSQL connection URL (using only POSTGRES_URL as requested)
 DB_URL = os.getenv("POSTGRES_URL")
 
 # If POSTGRES_URL doesn't start with postgresql+asyncpg://, modify it
 if DB_URL and DB_URL.startswith("postgresql://"):
     DB_URL = DB_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 elif not DB_URL:
-    # Build the URL from individual components
-    pg_user = os.getenv("POSTGRES_USER")
-    pg_password = os.getenv("POSTGRES_PASSWORD")
-    pg_host = os.getenv("POSTGRES_HOST")
-    pg_port = os.getenv("POSTGRES_PORT", "5432")
-    pg_database = os.getenv("POSTGRES_DB")
-    
-    if all([pg_user, pg_password, pg_host, pg_database]):
-        DB_URL = f"postgresql+asyncpg://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_database}"
+    logger.error("POSTGRES_URL not found in environment variables")
+    raise ValueError("POSTGRES_URL environment variable is required but was not found. Check your .env file.")
+
+# Extract components to handle special characters correctly
+try:
+    # Parse the URL manually to avoid issues with special characters
+    connection_parts = DB_URL.split('@')
+    if len(connection_parts) > 1:
+        # There's at least one @ in the URL (likely in the credentials)
+        # Take the last part as the host:port/dbname
+        host_part = connection_parts[-1]
+        # Join all other parts with @ for the credentials portion
+        creds_part = '@'.join(connection_parts[:-1])
+        
+        # Further split credential part
+        if '://' in creds_part:
+            driver, auth = creds_part.split('://', 1)
+        else:
+            driver, auth = 'postgresql+asyncpg', creds_part
+            
+        # Reconstruct URL with proper escaping
+        from urllib.parse import quote_plus
+        if ':' in auth:
+            user, pwd = auth.split(':', 1)
+            # Quote the password part
+            auth = f"{user}:{quote_plus(pwd)}"
+            
+        DB_URL = f"{driver}://{auth}@{host_part}"
+        
+    logger.info(f"Using database URL: {driver}://***:***@{host_part}")
+except Exception as e:
+    logger.warning(f"Could not parse database URL for logging: {str(e)}")
+    # Fall back to simple masking
+    if '@' in DB_URL:
+        logger.info(f"Using database URL: {DB_URL.split('@')[0].split(':')[0]}:***@{DB_URL.split('@')[1]}")
     else:
-        logger.error("Database connection details not found in environment variables")
-        raise ValueError("Database connection URL could not be constructed. Check environment variables.")
+        logger.info("Using database URL with masked credentials")
+
 
 # Create engine with proper async configuration
 engine = create_async_engine(

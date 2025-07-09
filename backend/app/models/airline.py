@@ -1,7 +1,7 @@
 """
 Airline model for SQLAlchemy ORM
 """
-from sqlalchemy import Column, String
+from sqlalchemy import Column, String, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import text
 from app.database.database import Base
@@ -15,6 +15,8 @@ class Airline(Base, TimestampMixin):
     code = Column(String, nullable=False, unique=True)
     name = Column(String, nullable=False)
     logo_url = Column(String, nullable=True)
+
+    __table_args__ = (Index('ix_airlines_code', 'code'),)
     
     def __repr__(self):
         return f"<Airline(code={self.code}, name={self.name})>"

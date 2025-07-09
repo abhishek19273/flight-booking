@@ -1,7 +1,7 @@
 """
 Flight model for SQLAlchemy ORM
 """
-from sqlalchemy import Column, String, Integer, DateTime, Numeric, ForeignKey, CheckConstraint
+from sqlalchemy import Column, String, Integer, DateTime, Numeric, ForeignKey, CheckConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import text
 from sqlalchemy.orm import relationship
@@ -43,6 +43,9 @@ class Flight(Base, TimestampMixin):
     # Constraints
     __table_args__ = (
         CheckConstraint("status IN ('scheduled', 'delayed', 'cancelled', 'in_air', 'landed', 'diverted')"),
+        Index('ix_flights_origin_dest_departure', 'origin_airport_id', 'destination_airport_id', 'departure_time'),
+        Index('ix_flights_departure_time', 'departure_time'),
+        Index('ix_flights_airline_id', 'airline_id'),
     )
     
     def __repr__(self):

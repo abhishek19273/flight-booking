@@ -1,7 +1,7 @@
 """
 Airport model for SQLAlchemy ORM
 """
-from sqlalchemy import Column, String, Float
+from sqlalchemy import Column, String, Float, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import text
 from app.database.database import Base
@@ -20,6 +20,8 @@ class Airport(Base, TimestampMixin):
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     timezone = Column(String, nullable=True)
+
+    __table_args__ = (Index('ix_airports_iata_code', 'iata_code'),)
     
     def __repr__(self):
         return f"<Airport(iata_code={self.iata_code}, name={self.name}, city={self.city})>"
