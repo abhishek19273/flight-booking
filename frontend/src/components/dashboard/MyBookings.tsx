@@ -70,23 +70,47 @@ const MyBookings = () => {
     queryFn: getAllBookings,
   });
 
-    const updateBookingMutation = useMutation<BookingDetails, Error, { bookingId: string; passengerUpdates: PassengerUpdate[] }>({ 
+  const updateBookingMutation = useMutation<BookingDetails, Error, { bookingId: string; passengerUpdates: PassengerUpdate[] }, { previousBookings: BookingDetails[] | undefined }>({ 
     mutationFn: ({ bookingId, passengerUpdates }) => 
       updateBooking(bookingId, { passengers: passengerUpdates }),
+    onMutate: async ({ bookingId, passengerUpdates }) => {
+      await queryClient.cancelQueries({ queryKey: ['bookings'] });
+      const previousBookings = queryClient.getQueryData<BookingDetails[]>(['bookings']);
+
+      queryClient.setQueryData<BookingDetails[]>(['bookings'], (oldData = []) =>
+        oldData.map(booking => {
+          if (booking.id === bookingId) {
+            const updatedPassengers = booking.passengers.map(p => {
+              const update = passengerUpdates.find(up => up.id === p.id);
+              return update ? { ...p, ...update } : p;
+            });
+            return { ...booking, passengers: updatedPassengers };
+          }
+          return booking;
+        })
+      );
+
+      handleCloseModal();
+      return { previousBookings };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['bookings'] });
       toast({ 
         title: 'Success',
         description: 'Your booking has been updated.',
       });
-      handleCloseModal();
     },
-    onError: (err: Error) => {
+    onError: (err, __, context) => {
+      if (context?.previousBookings) {
+        queryClient.setQueryData(['bookings'], context.previousBookings);
+      }
       toast({
         title: 'Update Failed',
         description: err.message || 'An unexpected error occurred.',
         variant: 'destructive',
       });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
     },
   });
 
@@ -114,7 +138,7 @@ const MyBookings = () => {
         description: 'Your booking has been cancelled.',
       });
       // Optimistically update the query cache
-      queryClient.setQueryData<BookingDetails[]>(['userBookings'], (oldData) => 
+      queryClient.setQueryData<BookingDetails[]>(['bookings'], (oldData) => 
         oldData ? oldData.map(b => b.id === updatedBooking.id ? { ...b, status: updatedBooking.status } : b) : []
       );
     },

@@ -16,18 +16,19 @@ interface BookingModificationModalProps {
 
 const BookingModificationModal: React.FC<BookingModificationModalProps> = ({ open, onClose, booking, onUpdate, isUpdating }) => {
   const [passengers, setPassengers] = useState<PassengerUpdate[]>([]);
+  const [initialPassengers, setInitialPassengers] = useState<PassengerUpdate[]>([]);
 
   useEffect(() => {
     if (booking) {
-            setPassengers(
-        booking.passengers.map(p => ({
-          id: p.id,
-          first_name: p.first_name,
-          last_name: p.last_name,
-          date_of_birth: p.date_of_birth,
-          passport_number: p.passport_number,
-        }))
-      );
+      const passengerData = booking.passengers.map(p => ({
+        id: p.id,
+        first_name: p.first_name,
+        last_name: p.last_name,
+        date_of_birth: p.date_of_birth,
+        passport_number: p.passport_number,
+      }));
+      setPassengers(passengerData);
+      setInitialPassengers(JSON.parse(JSON.stringify(passengerData))); // Deep copy
     }
   }, [booking]);
 
@@ -40,13 +41,15 @@ const BookingModificationModal: React.FC<BookingModificationModalProps> = ({ ope
   const handleSaveChanges = () => {
     if (!booking) return;
 
-    const updatedPassengers = passengers.filter((p, index) => {
-      const originalPassenger = booking.passengers[index];
-      return JSON.stringify(p) !== JSON.stringify(originalPassenger);
+    const updatedPassengers = passengers.filter(p => {
+      const originalPassenger = initialPassengers.find(ip => ip.id === p.id);
+      return originalPassenger && JSON.stringify(p) !== JSON.stringify(originalPassenger);
     });
 
     if (updatedPassengers.length > 0) {
       onUpdate(updatedPassengers);
+    } else {
+      onClose(); // Close modal if no changes were made
     }
   };
 
