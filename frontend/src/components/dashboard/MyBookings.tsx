@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Calendar, Loader2, Plane, Ticket, Users } from 'lucide-react';
+import { AlertCircle, Calendar, Loader2, Plane, Ticket, Users, BarChartHorizontalBig } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { getAllBookings, cancelBooking, updateBooking } from '../../services/api/bookings';
 import { Booking, BookingDetails, PassengerUpdate } from '../../types';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
@@ -247,6 +248,18 @@ const MyBookings = () => {
                 className="flex items-center gap-2 w-36 justify-center"
               >
                 Modify Booking
+              </Button>
+              <Button 
+                asChild
+                variant="outline"
+                size="sm"
+                disabled={booking.status === 'cancelled'}
+                className="flex items-center gap-2 w-36 justify-center"
+              >
+                <Link to={`/track-flight/${booking.id}`}>
+                  <BarChartHorizontalBig className="h-4 w-4" />
+                  Track Flight
+                </Link>
               </Button>
             </CardFooter>
           </Card>

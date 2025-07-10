@@ -87,8 +87,8 @@ async def create_booking(user_id: str, booking_data: Dict[str, Any]) -> Dict[str
                 detail=f"Failed to create passengers: {passenger_response.error}"
             )
     
-    # Get complete booking details
-    booking_details = await get_booking_details_by_id(booking_id)
+    # Get complete booking details, ensuring it matches the user who created it
+    booking_details = await get_booking_details_by_id(booking_id, user_id=user_id)
     
     # Send confirmation email
     user_email_response = supabase.table("profiles").select("email").eq("user_id", user_id).execute()
@@ -121,7 +121,8 @@ async def get_all_booking_details_for_user(user_id: str) -> List[Dict[str, Any]]
     detailed_bookings = []
     for b in user_bookings:
         try:
-            booking_details = await get_booking_details_by_id(b['id'])
+            # Pass user_id to ensure we only fetch details for the user's own bookings
+            booking_details = await get_booking_details_by_id(b['id'], user_id=user_id)
             detailed_bookings.append(booking_details)
         except HTTPException:
             # If a single booking fails, we can choose to skip it or log it.
@@ -131,14 +132,21 @@ async def get_all_booking_details_for_user(user_id: str) -> List[Dict[str, Any]]
     return detailed_bookings
 
 
-async def get_booking_details_by_id(booking_id: str) -> Dict[str, Any]:
+async def get_booking_details_by_id(booking_id: str, user_id: str = None) -> Dict[str, Any]:
     """
-    Get detailed information about a specific booking including flights and passengers
+    Get detailed information about a specific booking including flights and passengers.
+    If user_id is provided, it also ensures the booking belongs to that user.
     """
     supabase = get_supabase_client()
     
-    # Get booking
-    booking_response = supabase.table("bookings").select("*").eq("id", booking_id).single().execute()
+    # Base query for getting a booking
+    query = supabase.table("bookings").select("*").eq("id", booking_id)
+
+    # If a user_id is provided, add it to the query to enforce ownership
+    if user_id:
+        query = query.eq("user_id", user_id)
+
+    booking_response = query.single().execute()
     
     if hasattr(booking_response, "error") and booking_response.error:
         raise HTTPException(

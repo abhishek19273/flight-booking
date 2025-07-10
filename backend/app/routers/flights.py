@@ -1,4 +1,9 @@
-from fastapi import APIRouter, HTTPException, status, Request
+import logging
+from fastapi import APIRouter, HTTPException, status, Request, Depends
+from fastapi.responses import StreamingResponse
+from app.services.auth import get_current_user
+from app.services.booking import get_booking_details_by_id
+import random
 from typing import List, Literal
 from app.schemas.flight import FlightSearchParams, FlightResponse, FlightDetailResponse, FlightAvailabilityResponse, FlightStatusUpdate, Passengers
 from app.database.init_db import get_supabase_client
@@ -191,3 +196,75 @@ async def stream_flight_updates(request: Request):
             raise
 
     return EventSourceResponse(event_generator())
+
+logger = logging.getLogger(__name__)
+
+@router.get("/track/{booking_id}")
+async def track_flight_status(booking_id: str, request: Request, current_user: dict = Depends(get_current_user)):
+    """
+    SSE endpoint to stream flight status updates for a specific booking.
+    This version uses the actual flight details to generate more realistic mock data.
+    """
+    try:
+        user_id = current_user['id']
+        logger.info(f"Attempting to track flight for booking_id: {booking_id} for user_id: {user_id}")
+        
+        # 1. Fetch booking details, ensuring it exists and belongs to the current user.
+        booking_details = await get_booking_details_by_id(booking_id, user_id=user_id)
+        
+        if not booking_details:
+            logger.warning(f"Tracking failed: Booking not found for id {booking_id} and user {user_id}")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found or you do not have permission to view it.")
+
+        logger.info(f"Successfully found booking {booking_id} for tracking.")
+        # The service returns a list of 'flights', not a single 'flight'. We'll track the first one.
+        if not booking_details or not booking_details.get('flights') or not booking_details['flights']:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flight details for this booking could not be found.")
+
+        # Use the 'flight' object nested inside the first item of the 'flights' list
+        flight_info = booking_details['flights'][0]['flight']
+        origin = flight_info.get('origin', {}).get('name', 'N/A')
+        destination = flight_info.get('destination', {}).get('name', 'N/A')
+        departure_time = flight_info.get('departure_time', 'N/A')
+        arrival_time = flight_info.get('arrival_time', 'N/A')
+        flight_number = flight_info.get('flight_number', 'N/A')
+        departure_gate = flight_info.get('departure_gate', 'TBA')
+        arrival_gate = flight_info.get('arrival_gate', 'TBA')
+
+    except HTTPException as e:
+        # Forward HTTP exceptions from the service layer
+        raise e
+    except Exception as e:
+        # Catch any other unexpected errors during detail fetching
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve booking details: {str(e)}"
+        )
+
+    async def event_generator():
+        """Yields mock flight status updates periodically using real flight data."""
+        statuses = [
+            {"status": "Confirmed", "location": f"{origin}", "details": f"Your flight {flight_number} to {destination} is confirmed for {departure_time}."},
+            {"status": "On Time", "location": f"Gate {departure_gate}", "details": "Boarding will begin approximately 45 minutes before departure."},
+            {"status": "Boarding", "location": f"Gate {departure_gate}", "details": "Now boarding all zones. Please have your boarding pass ready."},
+            {"status": "Departed", "location": "En route", "details": f"Flight {flight_number} has departed from {origin}."},
+            {"status": "In Air", "location": "Cruising Altitude", "details": f"Estimated time of arrival in {destination} is {arrival_time}."},
+            {"status": "Landed", "location": f"{destination}", "details": f"Flight {flight_number} has landed at {destination}."},
+            {"status": "Arrived", "location": f"Gate {arrival_gate}", "details": f"Welcome to {destination}. Baggage claim is at carousel {random.randint(1, 10)}."}
+        ]
+        try:
+            for status_update in statuses:
+                if await request.is_disconnected():
+                    print(f"Client disconnected early from tracking booking {booking_id}")
+                    break
+                yield f"data: {json.dumps(status_update)}\n\n"
+                await asyncio.sleep(random.uniform(3, 6))
+            
+            if not await request.is_disconnected():
+                yield f"data: {json.dumps({'status': 'Complete', 'details': 'Tracking finished.'})}\n\n"
+
+        except asyncio.CancelledError:
+            print(f"Client disconnected from tracking booking {booking_id}")
+            # No need to raise, as the connection is already closed
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

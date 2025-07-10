@@ -18,6 +18,7 @@ import Search from "./pages/Search";
 import Booking from "./pages/Booking";
 import BookingConfirmation from "./pages/BookingConfirmation";
 import FlightTracking from "./components/FlightTracking";
+import FlightTrackingPage from './pages/FlightTrackingPage'; // Import the new page
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -64,6 +65,11 @@ const App = () => (
             <Route path="/tracking" element={
               <ProtectedRoute>
                 <FlightTracking />
+              </ProtectedRoute>
+            } />
+            <Route path="/track-flight/:bookingId" element={
+              <ProtectedRoute>
+                <FlightTrackingPage />
               </ProtectedRoute>
             } />
             
