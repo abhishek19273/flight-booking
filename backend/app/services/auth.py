@@ -6,6 +6,10 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 from app.database.init_db import get_supabase_client
+import logging
+
+
+logger = logging.getLogger("auth")
 
 # Load environment variables
 load_dotenv()
@@ -50,22 +54,32 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         headers={"WWW-Authenticate": "Bearer"},
     )
     
+    supabase = get_supabase_client()
     try:
-        # Decode JWT
+        # 1. Decode the token to get the user_id (subject).
+        logger.info("Attempting to decode JWT...")
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id: str = payload.get("sub")
-        
         if user_id is None:
+            logger.error("JWT decoding failed: 'sub' (user_id) not found in payload.")
             raise credentials_exception
-            
-    except JWTError:
+        logger.info(f"JWT decoded successfully. User ID: {user_id}")
+
+        # 2. As an authorized backend, fetch the full user object from Supabase.
+        logger.info(f"Attempting to fetch user profile from Supabase for user_id: {user_id}")
+        try:
+            user_response = supabase.auth.admin.get_user_by_id(user_id)
+            if not user_response or not user_response.user:
+                logger.error(f"Supabase call succeeded but returned no user for user_id: {user_id}")
+                raise credentials_exception
+            logger.info(f"Successfully fetched user profile from Supabase for user_id: {user_id}")
+            # 3. Return the user object (it's a Pydantic model, so we convert to dict).
+            return user_response.user.model_dump()
+        except Exception as e:
+            logger.error(f"ERROR during Supabase admin call for user_id {user_id}: {e}")
+            raise credentials_exception
+
+    except JWTError as e:
+        # If decoding fails, the token is invalid.
+        logger.error(f"JWTError during token decoding: {e}")
         raise credentials_exception
-        
-    # Get user from Supabase
-    supabase = get_supabase_client()
-    user_response = supabase.auth.api.get_user(user_id)
-    
-    if user_response.get("error") or not user_response.get("user"):
-        raise credentials_exception
-        
-    return user_response["user"]

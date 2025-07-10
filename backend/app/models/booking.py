@@ -13,14 +13,13 @@ class Booking(Base, TimestampMixin):
     __tablename__ = "bookings"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), nullable=False, comment="References Supabase Auth user ID")
     booking_reference = Column(String, nullable=False, unique=True)
     trip_type = Column(String, nullable=False)
     total_amount = Column(Numeric, nullable=False)
     status = Column(String, nullable=False, server_default="confirmed")
     
     # Relationships
-    user = relationship("User", back_populates="bookings")
     booking_flights = relationship("BookingFlight", back_populates="booking", cascade="all, delete-orphan")
     passengers = relationship("Passenger", back_populates="booking", cascade="all, delete-orphan")
     payments = relationship("Payment", back_populates="booking", cascade="all, delete-orphan")

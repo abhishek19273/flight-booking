@@ -1,13 +1,17 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { login, register, logout, getCurrentUser, refreshToken } from '@/services/api/auth';
-import type { UserProfile } from '@/services/api/auth';
+import { supabase } from '../services/supabaseClient';
+import type { User, Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
-  user: UserProfile | null;
+  user: User | null;
+  session: Session | null;
   loading: boolean;
   signUp: (email: string, password: string, firstName: string, lastName: string, phoneNumber?: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
+  signInWithGoogle: () => Promise<{ error: any }>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<{ error: any }>;
+  confirmPasswordReset: (newPassword: string) => Promise<{ error: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,15 +25,17 @@ export const useAuth = () => {
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const checkAuth = async () => {
+    // Check for existing session
+    const getSession = async () => {
       try {
-        // Check for existing user session from API
-        const currentUser = await getCurrentUser();
-        setUser(currentUser);
+        const { data } = await supabase.auth.getSession();
+        setSession(data.session);
+        setUser(data.session?.user ?? null);
       } catch (error) {
         console.error('Auth check error:', error);
       } finally {
@@ -37,30 +43,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    checkAuth();
+    getSession();
 
-    // Set up a token refresh interval
-    const refreshInterval = setInterval(() => {
-      // Refresh token if user is logged in
-      if (localStorage.getItem('accessToken')) {
-        refreshToken().catch(console.error);
+    // Listen for auth state changes
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
       }
-    }, 15 * 60 * 1000); // Refresh every 15 minutes
+    );
 
-    return () => clearInterval(refreshInterval);
+    return () => {
+      listener?.subscription.unsubscribe();
+    };
   }, []);
 
   const signUp = async (email: string, password: string, firstName: string, lastName: string, phoneNumber?: string) => {
     try {
-      const userData = await register({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        first_name: firstName,
-        last_name: lastName,
-        phone_number: phoneNumber
+        options: {
+          data: {
+            first_name: firstName,
+            last_name: lastName,
+            phone_number: phoneNumber
+          }
+        }
       });
       
-      setUser(userData);
+      if (error) throw error;
       return { error: null };
     } catch (error: any) {
       return { error };
@@ -69,12 +81,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     try {
-      await login({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
       
-      // Get user profile after successful login
-      const userData = await getCurrentUser();
-      setUser(userData);
+      if (error) throw error;
+      return { error: null };
+    } catch (error: any) {
+      return { error };
+    }
+  };
+
+  const signInWithGoogle = async () => {
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth`
+        }
+      });
       
+      if (error) throw error;
+      return { error: null };
+    } catch (error: any) {
+      return { error };
+    }
+  };
+
+  const resetPassword = async (email: string) => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`
+      });
+      
+      if (error) throw error;
       return { error: null };
     } catch (error: any) {
       return { error };
@@ -82,16 +123,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async () => {
-    await logout();
-    setUser(null);
+    await supabase.auth.signOut();
+    // Auth state change listener will update user and session
+  };
+
+  const confirmPasswordReset = async (newPassword: string) => {
+    try {
+      // When using Supabase Auth, the user is already in a valid recovery state
+      // after clicking the reset link in their email and being redirected to our app
+      // We just need to update the password
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+      
+      if (error) throw error;
+      return { error: null };
+    } catch (error: any) {
+      return { error };
+    }
   };
 
   const value = {
     user,
+    session,
     loading,
     signUp,
     signIn,
+    signInWithGoogle,
     signOut,
+    resetPassword,
+    confirmPasswordReset
   };
 
   return (

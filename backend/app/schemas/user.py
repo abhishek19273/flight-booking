@@ -1,5 +1,5 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional, Dict
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional, Dict, Any
 from datetime import datetime
 
 
@@ -28,10 +28,11 @@ class UserProfileUpdate(BaseModel):
 class UserResponse(BaseModel):
     id: str
     email: EmailStr
-    first_name: str
-    last_name: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     phone_number: Optional[str] = None
     created_at: datetime
+    user_metadata: Optional[Dict[str, Any]] = None
 
 
 class UserProfileResponse(UserResponse):
@@ -45,11 +46,15 @@ class UserProfileResponse(UserResponse):
 
 class TokenResponse(BaseModel):
     access_token: str
-    token_type: str
-    expires_at: int
+    token_type: str = "bearer"
+    expires_in: int
     refresh_token: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str

@@ -19,12 +19,20 @@ app = FastAPI(
 )
 
 # Configure CORS
+origins = [
+    "http://localhost:5173",  # Vite dev server
+    "http://localhost:3000",  # React dev server
+    "http://localhost:8000",  # FastAPI server
+    # Add your production domain here
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update with specific frontend domain in production
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept"],
+    expose_headers=["Content-Type", "Authorization"],
 )
 
 # Include routers

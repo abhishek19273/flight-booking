@@ -1,7 +1,6 @@
 import axios from 'axios';
-
-// Get API URL from environment variables
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+import { API_BASE_URL } from './config';
+import { supabase } from '../supabaseClient';
 
 // Create axios instance with default config
 export const axiosInstance = axios.create({
@@ -13,10 +12,13 @@ export const axiosInstance = axios.create({
 
 // Add request interceptor for authentication
 axiosInstance.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+  async (config) => {
+    // Get the current session from Supabase
+    const { data } = await supabase.auth.getSession();
+    const session = data.session;
+    
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
     }
     return config;
   },
@@ -34,18 +36,14 @@ axiosInstance.interceptors.response.use(
       originalRequest._retry = true;
       
       try {
-        // Try to refresh the token
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (refreshToken) {
-          const response = await axios.post(`${API_BASE_URL}/auth/refresh`, { refresh_token: refreshToken });
-          
-          // Store the new tokens
-          const { access_token, refresh_token } = response.data;
-          localStorage.setItem('access_token', access_token);
-          localStorage.setItem('refresh_token', refresh_token);
-          
+        // Try to refresh the session with Supabase
+        const { data, error: refreshError } = await supabase.auth.refreshSession();
+        
+        if (refreshError) throw refreshError;
+        
+        if (data?.session?.access_token) {
           // Update the original request with the new token
-          originalRequest.headers.Authorization = `Bearer ${access_token}`;
+          originalRequest.headers.Authorization = `Bearer ${data.session.access_token}`;
           
           // Retry the original request
           return axios(originalRequest);
