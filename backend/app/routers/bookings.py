@@ -32,6 +32,27 @@ async def create_new_booking(booking_data: BookingCreate, current_user: dict = D
         )
 
 
+@router.get("", response_model=List[BookingResponse])
+async def get_user_bookings(current_user: dict = Depends(get_current_user)):
+    """
+    Get all bookings for the authenticated user
+    """
+    supabase = get_supabase_client()
+    response = supabase.table("bookings") \
+        .select("*") \
+        .eq("user_id", current_user["id"]) \
+        .order("created_at", desc=True) \
+        .execute()
+
+    if hasattr(response, "error") and response.error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve bookings: {response.error}"
+        )
+
+    return response.data
+
+
 @router.get("/{booking_id}", response_model=BookingDetailResponse)
 async def get_booking(booking_id: str, current_user: dict = Depends(get_current_user)):
     """

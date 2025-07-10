@@ -85,7 +85,21 @@ const SearchPage: React.FC = () => {
       navigate('/auth/login');
       return;
     }
-    navigate(`/booking/${flight.id}`);
+
+    if (currentSearch) {
+      const bookingData = {
+        flight: flight,
+        searchParams: currentSearch,
+      };
+      sessionStorage.setItem('selectedFlight', JSON.stringify(bookingData));
+      navigate('/booking');
+    } else {
+      toast({
+        title: 'Error',
+        description: 'Could not retrieve search parameters. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   if (!searched) {

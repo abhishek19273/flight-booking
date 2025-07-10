@@ -46,7 +46,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     """
-    Validate the access token and return the current user
+    Validate the access token using Supabase and return the current user.
+    This is the correct way to validate a Supabase JWT from a secure backend.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -56,30 +57,17 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     
     supabase = get_supabase_client()
     try:
-        # 1. Decode the token to get the user_id (subject).
-        logger.info("Attempting to decode JWT...")
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
-            logger.error("JWT decoding failed: 'sub' (user_id) not found in payload.")
+        logger.info("Attempting to validate token with Supabase...")
+        user_response = supabase.auth.get_user(token)
+        
+        if not user_response or not user_response.user:
+            logger.error("Token is invalid or expired.")
             raise credentials_exception
-        logger.info(f"JWT decoded successfully. User ID: {user_id}")
+            
+        logger.info(f"Token validated successfully. User ID: {user_response.user.id}")
+        # Return the user object as a dictionary
+        return user_response.user.model_dump()
 
-        # 2. As an authorized backend, fetch the full user object from Supabase.
-        logger.info(f"Attempting to fetch user profile from Supabase for user_id: {user_id}")
-        try:
-            user_response = supabase.auth.admin.get_user_by_id(user_id)
-            if not user_response or not user_response.user:
-                logger.error(f"Supabase call succeeded but returned no user for user_id: {user_id}")
-                raise credentials_exception
-            logger.info(f"Successfully fetched user profile from Supabase for user_id: {user_id}")
-            # 3. Return the user object (it's a Pydantic model, so we convert to dict).
-            return user_response.user.model_dump()
-        except Exception as e:
-            logger.error(f"ERROR during Supabase admin call for user_id {user_id}: {e}")
-            raise credentials_exception
-
-    except JWTError as e:
-        # If decoding fails, the token is invalid.
-        logger.error(f"JWTError during token decoding: {e}")
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during token validation: {e}")
         raise credentials_exception

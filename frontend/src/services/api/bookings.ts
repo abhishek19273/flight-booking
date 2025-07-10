@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { supabase } from '../supabaseClient';
 import { API_BASE_URL } from './config';
 import { Booking, CreateBookingData, BookingDetail } from '../../types';
 
@@ -11,8 +12,10 @@ const bookingsApi = axios.create({
 });
 
 // Add auth token to requests
-bookingsApi.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken');
+bookingsApi.interceptors.request.use(async (config) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -53,9 +56,9 @@ export const getBookingById = async (bookingId: string): Promise<BookingDetail> 
  * Get all bookings for the current user
  * @returns List of user bookings
  */
-const getUserBookings = async (): Promise<Booking[]> => {
+export const getUserBookings = async (): Promise<Booking[]> => {
   try {
-    const response = await bookingsApi.get('/user');
+    const response = await bookingsApi.get('');
     return response.data;
   } catch (error: any) {
     console.error('Error fetching user bookings:', error.response?.data || error.message);
@@ -68,9 +71,9 @@ const getUserBookings = async (): Promise<Booking[]> => {
  * @param bookingId The booking ID to cancel
  * @returns Confirmation message
  */
-const cancelBooking = async (bookingId: string): Promise<{message: string}> => {
+export const cancelBooking = async (bookingId: string): Promise<{message: string}> => {
   try {
-    const response = await bookingsApi.post(`/${bookingId}/cancel`);
+    const response = await bookingsApi.delete(`/${bookingId}`);
     return response.data;
   } catch (error: any) {
     console.error('Error cancelling booking:', error.response?.data || error.message);
