@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone, timedelta
+import os
 
 from app.main import app
 from app.routers.flights import get_current_user
@@ -117,6 +118,10 @@ def test_search_flights_unit(mock_get_supabase_client, client):
     mock_flight_query.gte.assert_any_call('economy_available', 1)
 
 
+@pytest.mark.skipif(
+    not os.environ.get("SUPABASE_URL") or "example.supabase.co" in os.environ.get("SUPABASE_URL", ""),
+    reason="SUPABASE_URL is not configured for integration tests"
+)
 @pytest.mark.integration
 def test_search_flights_integration(client):
     """
