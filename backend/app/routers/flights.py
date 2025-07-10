@@ -257,11 +257,11 @@ async def track_flight_status(booking_id: str, request: Request, current_user: d
                 if await request.is_disconnected():
                     print(f"Client disconnected early from tracking booking {booking_id}")
                     break
-                yield f"data: {json.dumps(status_update)}\n\n"
+                yield f"event: flight_status\ndata: {json.dumps(status_update)}\n\n"
                 await asyncio.sleep(random.uniform(3, 6))
             
             if not await request.is_disconnected():
-                yield f"data: {json.dumps({'status': 'Complete', 'details': 'Tracking finished.'})}\n\n"
+                yield f"event: end_of_stream\ndata: {json.dumps({'status': 'Complete', 'details': 'Tracking finished.'})}\n\n"
 
         except asyncio.CancelledError:
             print(f"Client disconnected from tracking booking {booking_id}")
