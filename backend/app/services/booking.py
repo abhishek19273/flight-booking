@@ -102,6 +102,35 @@ async def create_booking(user_id: str, booking_data: Dict[str, Any]) -> Dict[str
     
     return booking_details
 
+async def get_all_booking_details_for_user(user_id: str) -> List[Dict[str, Any]]:
+    """
+    Get all booking details for a specific user, including flights and passengers.
+    """
+    supabase = get_supabase_client()
+
+    # 1. Get all booking IDs for the user
+    bookings_response = supabase.table("bookings").select("id").eq("user_id", user_id).order("created_at", desc=True).execute()
+    if hasattr(bookings_response, "error") and bookings_response.error:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve bookings: {bookings_response.error}")
+
+    user_bookings = bookings_response.data
+    if not user_bookings:
+        return []
+
+    # 2. Fetch detailed information for each booking
+    detailed_bookings = []
+    for b in user_bookings:
+        try:
+            booking_details = await get_booking_details_by_id(b['id'])
+            detailed_bookings.append(booking_details)
+        except HTTPException:
+            # If a single booking fails, we can choose to skip it or log it.
+            # For now, we'll skip it to not fail the entire request.
+            continue
+            
+    return detailed_bookings
+
+
 async def get_booking_details_by_id(booking_id: str) -> Dict[str, Any]:
     """
     Get detailed information about a specific booking including flights and passengers

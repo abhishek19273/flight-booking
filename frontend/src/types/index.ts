@@ -11,7 +11,7 @@ export interface Airport {
 }
 
 // Airline types
-interface Airline {
+export interface Airline {
   id: string;
   iata_code: string;
   name: string;
@@ -52,7 +52,7 @@ export interface FlightWithDetails extends Flight {
 // Flight search types
 export type CabinClass = 'economy' | 'premium-economy' | 'business' | 'first';
 
-interface PassengerCount {
+export interface PassengerCount {
   adults: number;
   children: number;
   infants: number;
@@ -78,7 +78,7 @@ interface FlightAvailability {
 }
 
 // Booking types
-interface Passenger {
+export interface Passenger {
   id?: string;
   type: 'adult' | 'child' | 'infant';
   first_name: string;
@@ -89,19 +89,19 @@ interface Passenger {
   cabin_class: CabinClass;
 }
 
-interface BookingFlightItem {
+export interface BookingFlightItem {
   flight_id: string;
   is_return_flight: boolean;
 }
 
-interface BookingCreate {
+export interface BookingCreate {
   trip_type: 'one-way' | 'round-trip';
   flights: BookingFlightItem[];
   passengers: Passenger[];
   total_amount: number;
 }
 
-interface BookingUpdate {
+export interface BookingUpdate {
   status?: 'confirmed' | 'cancelled' | 'pending';
 }
 
@@ -116,13 +116,29 @@ export interface Booking {
   updated_at: string;
 }
 
-interface BookingDetails extends Booking {
-  flights: {
-    id: string;
-    booking_id: string;
-    flight_id: string;
-    is_return_flight: boolean;
-    flight: FlightWithDetails;
-  }[];
+export interface BookedFlight {
+  id: string;
+  booking_id: string;
+  flight_id: string;
+  is_return_flight: boolean;
+  flight: FlightWithDetails;
+}
+
+export interface PassengerUpdate {
+  id: string;
+  first_name?: string;
+  last_name?: string;
+  date_of_birth?: string;
+  passport_number?: string;
+}
+
+export interface BookingUpdate {
+  status?: 'confirmed' | 'cancelled' | 'pending';
+  passengers?: PassengerUpdate[];
+}
+
+export interface BookingDetails extends Booking {
+  flights: BookedFlight[];
   passengers: Passenger[];
+  total_amount: number;
 }

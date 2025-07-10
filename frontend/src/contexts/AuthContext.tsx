@@ -5,6 +5,7 @@ import { supabase } from '../services/supabaseClient';
 interface AuthContextType {
   user: User | null;
   session: Session | null;
+  token: string | null;
   loading: boolean;
   signUp: (email: string, password: string, firstName: string, lastName: string, phoneNumber?: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
@@ -143,9 +144,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const value = {
+    const value = {
     user,
     session,
+    token: session?.access_token ?? null,
     loading,
     signUp,
     signIn,

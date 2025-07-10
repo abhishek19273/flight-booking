@@ -26,8 +26,17 @@ class BookingCreate(BaseModel):
     total_amount: float
 
 
+class PassengerUpdate(BaseModel):
+    id: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    passport_number: Optional[str] = None
+
+
 class BookingUpdate(BaseModel):
     status: Optional[Literal['confirmed', 'cancelled']] = None
+    passengers: Optional[List[PassengerUpdate]] = None
 
 
 class PassengerResponse(PassengerCreate):
