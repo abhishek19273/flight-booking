@@ -10,6 +10,7 @@ import IndexedDBService from '../services/indexedDBService';
 
 // Use the imported type with a local alias
 export interface FlightSearchParams extends SearchParams {}
+export type { FlightWithDetails };
 
 export const useFlightSearch = () => {
   const [loading, setLoading] = useState(false);

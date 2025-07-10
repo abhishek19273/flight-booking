@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -11,9 +11,10 @@ import { DatePicker } from '@/components/DatePicker';
 
 interface FlightSearchFormProps {
   onSearch: (params: FlightSearchParams) => void;
+  initialState?: FlightSearchParams;
 }
 
-const FlightSearchForm: React.FC<FlightSearchFormProps> = ({ onSearch }) => {
+const FlightSearchForm: React.FC<FlightSearchFormProps> = ({ onSearch, initialState }) => {
   const [tripType, setTripType] = useState<'one-way' | 'round-trip'>('round-trip');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -25,6 +26,18 @@ const FlightSearchForm: React.FC<FlightSearchFormProps> = ({ onSearch }) => {
     children: 0,
     infants: 0
   });
+
+  useEffect(() => {
+    if (initialState) {
+      setTripType(initialState.tripType);
+      setFrom(initialState.from);
+      setTo(initialState.to);
+      setDepartDate(new Date(initialState.departureDate));
+      setReturnDate(initialState.returnDate ? new Date(initialState.returnDate) : undefined);
+      setCabinClass(initialState.cabinClass);
+      setPassengers(initialState.passengers);
+    }
+  }, [initialState]);
 
   const swapDestinations = () => {
     const temp = from;
@@ -38,7 +51,7 @@ const FlightSearchForm: React.FC<FlightSearchFormProps> = ({ onSearch }) => {
     const searchParams: FlightSearchParams = {
       from,
       to,
-      departDate: departDate.toISOString(),
+      departureDate: departDate.toISOString(),
       returnDate: tripType === 'round-trip' && returnDate ? returnDate.toISOString() : undefined,
       passengers,
       cabinClass: cabinClass as 'economy' | 'premium-economy' | 'business' | 'first',

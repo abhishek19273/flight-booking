@@ -26,7 +26,18 @@ flightsApi.interceptors.request.use((config) => {
  */
 export const searchFlights = async (params: FlightSearchParams): Promise<FlightWithDetails[]> => {
   try {
-    const response = await flightsApi.get('/search', { params });
+    // Manually construct query params to match backend expectations (snake_case, flat structure)
+    const queryParams = {
+      from_code: params.from,
+      to_code: params.to,
+      departure_date: new Date(params.departureDate).toISOString().split('T')[0],
+      cabin_class: params.cabinClass,
+      adults: params.passengers.adults,
+      children: params.passengers.children,
+      infants: params.passengers.infants,
+    };
+
+    const response = await flightsApi.get('/search', { params: queryParams });
     return response.data;
   } catch (error: any) {
     console.error('Error searching flights:', error.response?.data || error.message);

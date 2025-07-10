@@ -38,6 +38,7 @@ export interface Flight {
   business_available: number;
   first_available: number;
   stops: number;
+  aircraft_type?: string;
   created_at: string;
   updated_at: string;
 }
