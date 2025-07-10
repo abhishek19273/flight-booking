@@ -32,6 +32,7 @@ jobs:
       SUPABASE_KEY: "dummy-key-for-testing"
       SUPABASE_JWT_SECRET: "dummy-jwt-secret-for-testing"
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+      POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/test_db
       TESTING: true
       # In production, use GitHub secrets:
       # SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
