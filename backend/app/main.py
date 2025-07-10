@@ -3,7 +3,7 @@ import sys
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth, users, airports, flights, bookings, payments, flight_admin
+from app.routers import auth, users, airports, flights, bookings, payments, flight_admin, test_endpoints
 from app.database.init_db import init_db, logger as db_logger
 import uvicorn
 
@@ -43,6 +43,9 @@ app.include_router(flights.router, prefix="/flights", tags=["Flights"])
 app.include_router(bookings.router, prefix="/bookings", tags=["Bookings"])
 app.include_router(payments.router, prefix="/payments", tags=["Payments"])
 app.include_router(flight_admin.router, prefix="/admin/flights", tags=["Flight Administration"])
+
+# Include test endpoints for testing authentication
+app.include_router(test_endpoints.router, prefix="/api", tags=["Test Endpoints"])
 
 @app.on_event("startup")
 async def startup_event():

@@ -46,14 +46,14 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-async def get_admin_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_admin_user(credentials: HTTPAuthorizationCredentials = Depends(security), supabase_client=None):
     """
     Validates the JWT token and ensures the user has admin role
     """
     user = await get_current_user(credentials)
     
     # Get user data from Supabase to check role
-    supabase = get_supabase_client()
+    supabase = supabase_client or get_supabase_client()
     response = supabase.table("users").select("role").eq("id", user["id"]).execute()
     
     if hasattr(response, "error") and response.error:
