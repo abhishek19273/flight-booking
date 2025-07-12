@@ -1,23 +1,5 @@
-import axios from 'axios';
-import { API_BASE_URL } from './config';
+import { axiosInstance } from './apiClient';
 import { FlightWithDetails, Airport, FlightSearchParams } from '../../types';
-
-// Configure axios instance for flights endpoints
-const flightsApi = axios.create({
-  baseURL: `${API_BASE_URL}/flights`,
-  headers: {
-    'Content-Type': 'application/json',
-  }
-});
-
-// Add auth token to requests
-flightsApi.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
 
 /**
  * Search for flights based on search parameters
@@ -37,7 +19,7 @@ export const searchFlights = async (params: FlightSearchParams): Promise<FlightW
       infants: params.passengers.infants,
     };
 
-    const response = await flightsApi.get('/search', { params: queryParams });
+        const response = await axiosInstance.get('/flights/search', { params: queryParams });
     return response.data;
   } catch (error: any) {
     console.error('Error searching flights:', error.response?.data || error.message);
@@ -52,7 +34,7 @@ export const searchFlights = async (params: FlightSearchParams): Promise<FlightW
  */
 export const getFlightById = async (flightId: string): Promise<FlightWithDetails> => {
   try {
-    const response = await flightsApi.get(`/${flightId}`);
+        const response = await axiosInstance.get(`/flights/${flightId}`);
     return response.data;
   } catch (error: any) {
     console.error('Error fetching flight:', error.response?.data || error.message);
@@ -67,7 +49,7 @@ export const getFlightById = async (flightId: string): Promise<FlightWithDetails
  */
 export const searchAirports = async (searchTerm: string): Promise<Airport[]> => {
   try {
-    const response = await flightsApi.get('/airports/search', { 
+        const response = await axiosInstance.get('/flights/airports/search', { 
       params: { 
         term: searchTerm 
       } 
@@ -86,7 +68,7 @@ export const searchAirports = async (searchTerm: string): Promise<Airport[]> => 
  */
 const getFlightStatus = async (flightId: string): Promise<any> => {
   try {
-    const response = await flightsApi.get(`/${flightId}/status`);
+        const response = await axiosInstance.get(`/flights/${flightId}/status`);
     return response.data;
   } catch (error: any) {
     console.error('Error fetching flight status:', error.response?.data || error.message);
@@ -100,7 +82,7 @@ const getFlightStatus = async (flightId: string): Promise<any> => {
  * @returns Cleanup function to close the SSE connection
  */
 export const subscribeToFlightUpdates = (callback: (data: any) => void): () => void => {
-  const eventSource = new EventSource(`${API_BASE_URL}/flights/updates/stream`);
+    const eventSource = new EventSource(`${axiosInstance.defaults.baseURL}/flights/updates/stream`);
   
   eventSource.onmessage = (event) => {
     try {

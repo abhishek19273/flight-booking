@@ -1,25 +1,4 @@
-import axios from 'axios';
-import { API_BASE_URL } from './config';
-
-// Configure axios instance for auth endpoints
-const authApi = axios.create({
-  baseURL: `${API_BASE_URL}/auth`,
-  headers: {
-    'Content-Type': 'application/json',
-  }
-});
-
-// Add auth token to requests that require authentication
-authApi.interceptors.request.use((config) => {
-  // Only add token for endpoints that require authentication
-  if (config.url !== '/login' && config.url !== '/register' && config.url !== '/refresh') {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-  }
-  return config;
-});
+import { axiosInstance } from './apiClient';
 
 interface LoginCredentials {
   email: string;
@@ -57,7 +36,7 @@ export interface UserProfile {
  */
 export const login = async (credentials: LoginCredentials): Promise<TokenResponse> => {
   try {
-    const response = await authApi.post('/login', credentials);
+        const response = await axiosInstance.post('/auth/login', credentials);
     
     // Store tokens in localStorage
     localStorage.setItem('accessToken', response.data.access_token);
@@ -77,7 +56,7 @@ export const login = async (credentials: LoginCredentials): Promise<TokenRespons
  */
 export const register = async (userData: RegisterData): Promise<UserProfile> => {
   try {
-    const response = await authApi.post('/register', userData);
+        const response = await axiosInstance.post('/auth/register', userData);
     return response.data;
   } catch (error: any) {
     console.error('Registration error:', error.response?.data || error.message);
@@ -92,7 +71,7 @@ export const logout = async (): Promise<void> => {
   try {
     const token = localStorage.getItem('accessToken');
     if (token) {
-      await authApi.post('/logout', { token });
+            await axiosInstance.post('/auth/logout', { token });
     }
   } catch (error) {
     console.error('Logout error:', error);
@@ -112,7 +91,7 @@ export const getCurrentUser = async (): Promise<UserProfile | null> => {
   if (!token) return null;
   
   try {
-    const response = await authApi.get('/me');
+        const response = await axiosInstance.get('/auth/me');
     return response.data;
   } catch (error: any) {
     if (error.response?.status === 401) {
@@ -121,7 +100,7 @@ export const getCurrentUser = async (): Promise<UserProfile | null> => {
       if (refreshed) {
         // Retry with new token
         try {
-          const retryResponse = await authApi.get('/me');
+                  const retryResponse = await axiosInstance.get('/auth/me');
           return retryResponse.data;
         } catch (retryError) {
           console.error('Error getting user profile after token refresh:', retryError);
@@ -143,7 +122,7 @@ export const refreshToken = async (): Promise<boolean> => {
   if (!refreshToken) return false;
   
   try {
-    const response = await authApi.post('/refresh', { refresh_token: refreshToken });
+        const response = await axiosInstance.post('/auth/refresh', { refresh_token: refreshToken });
     
     // Update tokens in localStorage
     localStorage.setItem('accessToken', response.data.access_token);

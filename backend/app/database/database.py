@@ -65,8 +65,9 @@ except Exception as e:
 
 # Create engine with proper async configuration
 engine = create_async_engine(
-    DB_URL,
+    DB_URL, 
     echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+    future=True,
     pool_pre_ping=True,
     pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
     max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10"))
