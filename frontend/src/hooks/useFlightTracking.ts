@@ -18,7 +18,7 @@ export const useFlightTracking = () => {
     // Connect to the backend SSE stream.
     // Assumes vite.config.ts has a proxy for /api to the backend.
     const baseURL = import.meta.env.VITE_API_BASE_URL;
-    const eventSource = new EventSource(`${baseURL}/api/flights/updates/stream`);
+    const eventSource = new EventSource(`${baseURL}/flights/updates/stream`);
 
     eventSource.onopen = () => {
       setIsConnected(true);
