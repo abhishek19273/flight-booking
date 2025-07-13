@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 // This type matches the mock data structure sent by the backend
 export interface Flight {
@@ -13,12 +13,16 @@ export const useFlightTracking = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
-  useEffect(() => {
-    // Connect to the backend SSE stream.
-    // Assumes vite.config.ts has a proxy for /api to the backend.
+  const connect = useCallback(() => {
+    if (eventSourceRef.current && eventSourceRef.current.readyState !== EventSource.CLOSED) {
+      return;
+    }
+
     const baseURL = import.meta.env.VITE_API_BASE_URL;
     const eventSource = new EventSource(`${baseURL}/flights/updates/stream`);
+    eventSourceRef.current = eventSource;
 
     eventSource.onopen = () => {
       setIsConnected(true);
@@ -29,8 +33,7 @@ export const useFlightTracking = () => {
     eventSource.addEventListener('flight_update', (event) => {
       try {
         const update: Flight = JSON.parse(event.data);
-        // The backend sends one flight object at a time; we store it in an array
-        setFlights([update]); 
+        setFlights([update]);
         setLastUpdate(new Date().toISOString());
       } catch (parseError) {
         console.error('Error parsing flight_update data:', parseError);
@@ -44,12 +47,28 @@ export const useFlightTracking = () => {
       setIsConnected(false);
       eventSource.close();
     };
+  }, []);
 
-    // Clean up the connection when the component unmounts
+  const disconnect = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      setIsConnected(false);
+      console.log('Flight tracking stream disconnected.');
+    }
+  }, []);
+
+  const reconnect = useCallback(() => {
+    disconnect();
+    setTimeout(connect, 1000); // Add a small delay before reconnecting
+  }, [disconnect, connect]);
+
+  useEffect(() => {
+    connect();
     return () => {
-      eventSource.close();
+      disconnect();
     };
-  }, []); // Empty dependency array ensures this effect runs only once
+  }, [connect, disconnect]);
 
-  return { flights, isConnected, error, lastUpdate };
+  return { flights, isConnected, error, lastUpdate, reconnect };
 };
