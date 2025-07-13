@@ -1,164 +1,91 @@
-import { useEffect, useState, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { fetchEventSource } from '@microsoft/fetch-event-source';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { RocketIcon, CheckCircle2, XCircle, Hourglass, PlaneTakeoff, PlaneLanding, Info } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useAuth } from '@/contexts/AuthContext';
+import React from 'react';
+import { useFlightTracking, Flight } from '@/hooks/useFlightTracking';
+import { AlertCircle, CheckCircle, Clock, Wifi, WifiOff } from 'lucide-react';
 
-interface FlightStatus {
-  status: string;
-  location: string;
-  details: string;
-}
+const StatusIndicator: React.FC<{ isConnected: boolean; error: string | null }> = ({ isConnected, error }) => {
+  if (error) {
+    return (
+      <div className="flex items-center text-red-500">
+        <WifiOff className="h-5 w-5 mr-2" />
+        <span className="font-semibold">Connection Lost</span>
+      </div>
+    );
+  }
 
-class RetriableError extends Error { }
-class FatalError extends Error { }
-
-const FlightTrackingPage = () => {
-  const { bookingId } = useParams<{ bookingId: string }>();
-  const { session } = useAuth();
-  const [statusUpdates, setStatusUpdates] = useState<FlightStatus[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [isComplete, setIsComplete] = useState(false);
-
-  useEffect(() => {
-    if (!bookingId || !session?.access_token) return;
-
-    const ctrl = new AbortController();
-
-    fetchEventSource(`/flights/track/${bookingId}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Accept': 'text/event-stream',
-      },
-      signal: ctrl.signal,
-      onopen: async (response) => {
-        if (response.ok) {
-          console.log('SSE connection established');
-          setError(null);
-        } else if (response.status >= 400 && response.status < 500 && response.status !== 429) {
-          // Client-side errors are usually not retriable
-          throw new FatalError(`Client error: ${response.status}`);
-        }
-      },
-      onmessage: (event) => {
-        try {
-          const newStatus = JSON.parse(event.data) as FlightStatus;
-          if (newStatus.status === 'Complete') {
-            setIsComplete(true);
-            ctrl.abort(); // Close the connection
-            return;
-          }
-          setStatusUpdates((prevUpdates) => [...prevUpdates, newStatus]);
-        } catch (e) {
-          console.error('Failed to parse SSE message:', e);
-        }
-      },
-      onerror: (err) => {
-        if (err instanceof FatalError) {
-          setError('Could not connect to the tracking service. Please ensure you are authorized and try again.');
-          throw err; // Stop retrying
-        }
-        setError('Connection to the flight tracking service was lost. Reconnecting...');
-        return 5000; // Retry after 5 seconds
-      },
-    });
-
-    return () => {
-      ctrl.abort();
-    };
-  }, [bookingId, session]);
-
-  const getStatusIcon = (status: string) => {
-    const statusIconMap: { [key: string]: JSX.Element } = {
-      'Confirmed': <CheckCircle2 className="h-5 w-5 text-green-500" />,
-      'On Time': <Hourglass className="h-5 w-5 text-blue-500" />,
-      'Boarding': <PlaneTakeoff className="h-5 w-5 text-indigo-500" />,
-      'Departed': <PlaneTakeoff className="h-5 w-5 text-purple-500" />,
-      'In Air': <RocketIcon className="h-5 w-5 animate-pulse text-sky-500" />,
-      'Landed': <PlaneLanding className="h-5 w-5 text-teal-500" />,
-      'Arrived': <CheckCircle2 className="h-5 w-5 text-emerald-500" />,
-      'Delayed': <Info className="h-5 w-5 text-yellow-500" />,
-      'Cancelled': <XCircle className="h-5 w-5 text-red-500" />,
-    };
-    return statusIconMap[status] || <Info className="h-5 w-5 text-gray-500" />;
-  };
-
-  const lastStatus = useMemo(() => statusUpdates[statusUpdates.length - 1], [statusUpdates]);
+  if (isConnected) {
+    return (
+      <div className="flex items-center text-green-500">
+        <Wifi className="h-5 w-5 mr-2" />
+        <span className="font-semibold">Live Connection</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-3xl mx-auto">
-        <Card className="shadow-lg border-indigo-100">
-          <CardHeader className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-t-lg p-6">
-            <div className="flex items-center space-x-4">
-              <RocketIcon className="h-8 w-8" />
-              <div>
-                <CardTitle className="text-2xl font-bold">Live Flight Tracker</CardTitle>
-                <CardDescription className="text-blue-200">Booking ID: {bookingId}</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-6">
-            {error && (
-              <Alert variant="destructive" className="mb-6">
-                <XCircle className="h-4 w-4" />
-                <AlertTitle>Connection Error</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-
-            {statusUpdates.length === 0 && !error && !isComplete && (
-              <div className="text-center py-12">
-                <Hourglass className="h-12 w-12 mx-auto text-gray-400 animate-spin" />
-                <p className="mt-4 text-lg font-medium text-gray-700">Connecting to flight control...</p>
-                <p className="text-sm text-gray-500">Please wait while we fetch the latest updates for your flight.</p>
-              </div>
-            )}
-
-            {statusUpdates.length > 0 && (
-              <div className="space-y-6">
-                <div className="relative pl-8">
-                  <div className="absolute left-3 top-3 bottom-3 w-0.5 bg-gray-200"></div>
-                  {statusUpdates.map((update, index) => (
-                    <div key={index} className="relative mb-6">
-                      <div className="absolute left-[-1.3rem] top-0.5 flex items-center justify-center bg-white h-8 w-8 rounded-full border-2 border-blue-500">
-                        {getStatusIcon(update.status)}
-                      </div>
-                      <div className="ml-4">
-                        <p className="font-bold text-lg text-gray-800">{update.status}</p>
-                        <p className="text-sm text-gray-600">{update.location}</p>
-                        <p className="text-sm text-gray-500 mt-1">{update.details}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {isComplete && (
-              <Alert className="bg-green-50 border-green-400 text-green-800">
-                <CheckCircle2 className="h-4 w-4" />
-                <AlertTitle>Tracking Complete</AlertTitle>
-                <AlertDescription>
-                  {lastStatus?.details || 'Your flight has reached its destination.'}
-                </AlertDescription>
-              </Alert>
-            )}
-
-            <div className="mt-8 text-center">
-              <Button asChild variant="outline">
-                <Link to="/dashboard">Back to Dashboard</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+    <div className="flex items-center text-gray-500">
+      <WifiOff className="h-5 w-5 mr-2" />
+      <span className="font-semibold">Connecting...</span>
     </div>
   );
 };
 
-export default FlightTrackingPage;
+const FlightCard: React.FC<{ flight: Flight }> = ({ flight }) => (
+  <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+    <div className="flex justify-between items-center mb-4">
+      <h3 className="text-xl font-bold text-gray-800">{flight.flight_id}</h3>
+      <span className={`px-3 py-1 text-sm font-semibold rounded-full ${flight.status === 'On Time' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+        {flight.status}
+      </span>
+    </div>
+    <p className="text-gray-600 mb-4">{flight.message}</p>
+    <div className="text-xs text-gray-500 flex items-center">
+      <Clock className="h-3 w-3 mr-1.5" />
+      <span>Last Updated: {new Date(flight.updated_at).toLocaleTimeString()}</span>
+    </div>
+  </div>
+);
+
+const FlightTrackerPage: React.FC = () => {
+  const { flights, isConnected, error, lastUpdate } = useFlightTracking();
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white shadow-sm">
+        <div className="max-w-4xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-gray-900">Live Flight Tracker</h1>
+          <StatusIndicator isConnected={isConnected} error={error} />
+        </div>
+      </header>
+      <main className="py-10">
+        <div className="max-w-4xl mx-auto sm:px-6 lg:px-8">
+          {error && (
+            <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6 rounded-md">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <AlertCircle className="h-5 w-5 text-red-400" aria-hidden="true" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-red-700">{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-6">
+            {flights.length > 0 ? (
+              flights.map((flight) => <FlightCard key={flight.flight_id} flight={flight} />)
+            ) : (
+              <div className="text-center py-12 px-6 bg-white rounded-lg shadow-md">
+                <CheckCircle className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-2 text-sm font-medium text-gray-900">Waiting for flight data...</h3>
+                <p className="mt-1 text-sm text-gray-500">Updates will appear here automatically.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default FlightTrackerPage;

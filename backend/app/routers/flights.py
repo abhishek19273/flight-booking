@@ -158,44 +158,38 @@ async def update_flight_status(flight_id: str, status_update: FlightStatusUpdate
 @router.get("/updates/stream")
 async def stream_flight_updates(request: Request):
     """
-    SSE endpoint to stream flight status updates to clients.
+    SSE endpoint to stream mock flight status updates for demonstration.
     """
-    async def event_generator():
-        supabase = get_supabase_client()
-        # In a real application, you would subscribe to a specific flight_id channel
-        # For this example, we listen to all public flight updates
-        channel = supabase.channel('flight_updates')
-
-        def callback(payload):
-            # This is a simplistic callback. In a real app, you'd want to push
-            # this payload into a queue that the event_generator can read from.
-            # Directly yielding from here is not possible as this callback
-            # is not part of the generator's async context.
-            print(f"Flight update received: {payload}")
-
-        channel.on('postgres_changes', event='*', schema='public', table='flights', callback=callback)
-        supabase.postgrest.subscribe(channel)
-
+    async def mock_event_generator():
+        flight_number = "SBJ-2024"
+        statuses = ["On Time", "Delayed", "Boarding", "Departed", "In Air", "Landed"]
+        index = 0
         try:
             while True:
                 if await request.is_disconnected():
-                    print("Client disconnected, closing stream.")
-                    supabase.postgrest.unsubscribe(channel)
+                    print("Client disconnected, breaking from mock stream.")
                     break
-                
-                # Send a heartbeat to keep the connection alive
-                yield {
-                    "event": "heartbeat",
-                    "data": json.dumps({"timestamp": datetime.utcnow().isoformat()})
+
+                mock_payload = {
+                    "flight_id": flight_number,
+                    "status": statuses[index % len(statuses)],
+                    "updated_at": datetime.utcnow().isoformat(),
+                    "message": f"Flight {flight_number} status is now: {statuses[index % len(statuses)]}."
                 }
-                await asyncio.sleep(15)
+
+                yield {
+                    "event": "flight_update",
+                    "data": json.dumps(mock_payload)
+                }
+
+                index += 1
+                await asyncio.sleep(5)  # Send an update every 5 seconds
 
         except asyncio.CancelledError:
-            print("Stream cancelled by server.")
-            supabase.postgrest.unsubscribe(channel)
+            print("Mock stream cancelled.")
             raise
 
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(mock_event_generator())
 
 logger = logging.getLogger(__name__)
 
