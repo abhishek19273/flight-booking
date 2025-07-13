@@ -96,7 +96,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithGoogle = async () => {
     // Dynamically set the redirect URL to work in any environment
-    const redirectURL = `${window.location.origin}/auth/callback`;
+    const redirectURL = `${window.location.origin}/auth/v1/callback`;
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -107,9 +107,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (error) {
       console.error('Error signing in with Google:', error);
-      throw error;
       return { error };
     }
+
+    return { error: null };
   };
 
   const resetPassword = async (email: string) => {
