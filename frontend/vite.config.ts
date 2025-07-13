@@ -16,7 +16,6 @@ export default defineConfig(({ mode }) => ({
       '/flights': 'http://localhost:3000',
       '/bookings': 'http://localhost:3000',
       '/payments': 'http://localhost:3000',
-      '/admin': 'http://localhost:3000',
       '/api': 'http://localhost:3000',
     },
   },
