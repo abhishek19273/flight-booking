@@ -119,7 +119,75 @@ const IndexedDBService = {
     const tx = db.transaction(STORES.FLIGHTS, 'readonly');
     const index = tx.objectStore(STORES.FLIGHTS).index('origin_destination');
     
-    return index.getAll([originCode.toUpperCase(), destinationCode.toUpperCase()]);
+    return index.getAll([originCode, destinationCode]);
+  },
+  
+  /**
+   * Get flights from cache by origin and destination with filtering and sorting
+   * @param originCode Origin airport IATA code
+   * @param destinationCode Destination airport IATA code
+   * @param filters Optional filters to apply
+   * @param sorting Optional sorting parameters
+   * @param cabinClass Cabin class for price and availability filtering
+   */
+  getFilteredFlights: async (
+    originCode: string, 
+    destinationCode: string,
+    filters?: {
+      minPrice?: number;
+      maxPrice?: number;
+      airlineId?: string;
+      minAvailableSeats?: number;
+    },
+    sorting?: {
+      sortBy?: 'price' | 'duration' | 'departure_time' | 'arrival_time';
+      sortOrder?: 'asc' | 'desc';
+    },
+    cabinClass: 'economy' | 'premium-economy' | 'business' | 'first' = 'economy'
+  ): Promise<Flight[]> => {
+    // First get all flights for the route
+    const flights = await IndexedDBService.getFlightsByRoute(originCode, destinationCode);
+    
+    // Apply filters if provided
+    let filteredFlights = flights;
+    if (filters) {
+      filteredFlights = flights.filter(flight => {
+        // Get price and available seats for the selected cabin class
+        const price = flight[`${cabinClass.replace('-', '_')}_price`];
+        const availableSeats = flight[`${cabinClass.replace('-', '_')}_available`];
+        
+        // Apply price filters
+        if (filters.minPrice !== undefined && price < filters.minPrice) return false;
+        if (filters.maxPrice !== undefined && price > filters.maxPrice) return false;
+        
+        // Apply airline filter
+        if (filters.airlineId && flight.airline_id !== filters.airlineId) return false;
+        
+        // Apply seat availability filter
+        if (filters.minAvailableSeats !== undefined && availableSeats < filters.minAvailableSeats) return false;
+        
+        return true;
+      });
+    }
+    
+    // Apply sorting if provided
+    if (sorting && sorting.sortBy) {
+      const sortField = sorting.sortBy === 'price' 
+        ? `${cabinClass.replace('-', '_')}_price` 
+        : sorting.sortBy;
+      
+      const multiplier = sorting.sortOrder === 'desc' ? -1 : 1;
+      
+      filteredFlights.sort((a, b) => {
+        if (sortField === 'departure_time' || sortField === 'arrival_time') {
+          return multiplier * (new Date(a[sortField]).getTime() - new Date(b[sortField]).getTime());
+        } else {
+          return multiplier * ((a[sortField] || 0) - (b[sortField] || 0));
+        }
+      });
+    }
+    
+    return filteredFlights;
   },
   
   /**

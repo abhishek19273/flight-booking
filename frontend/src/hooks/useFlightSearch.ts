@@ -8,6 +8,18 @@ import {
 import { searchFlights as apiSearchFlights, getFlightById, subscribeToFlightUpdates } from '../services/api/flights';
 import IndexedDBService from '../services/indexedDBService';
 
+// Define filter and sorting types
+export interface FlightFilters {
+  minPrice?: number;
+  maxPrice?: number;
+  airlineId?: string;
+}
+
+export interface FlightSorting {
+  sortBy?: 'price' | 'duration' | 'departure_time' | 'arrival_time';
+  sortOrder?: 'asc' | 'desc';
+}
+
 // Use the imported type with a local alias
 export interface FlightSearchParams extends SearchParams {}
 export type { FlightWithDetails };
@@ -16,14 +28,18 @@ export const useFlightSearch = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const searchFlights = async (params: FlightSearchParams): Promise<FlightWithDetails[]> => {
+  const searchFlights = async (
+    params: FlightSearchParams,
+    filters?: FlightFilters,
+    sorting?: FlightSorting
+  ): Promise<FlightWithDetails[]> => {
     setLoading(true);
     setError(null);
 
     try {
       // Try to get data from API if online
       if (navigator.onLine) {
-        const results = await apiSearchFlights(params);
+        const results = await apiSearchFlights(params, filters, sorting);
         
         // Cache results in IndexedDB for offline use
         await IndexedDBService.saveFlights(results);
@@ -31,17 +47,20 @@ export const useFlightSearch = () => {
         return results;
       } else {
         // Fall back to cached data if offline
-        const cachedFlights = await IndexedDBService.getFlightsByRoute(
+        let cachedFlights = await IndexedDBService.getFlightsByRoute(
           params.from.toUpperCase(),
           params.to.toUpperCase()
-        );
+        ) as FlightWithDetails[];
         
         if (cachedFlights.length === 0) {
           throw new Error('No cached flight data available while offline');
         }
         
-        // Ensure we're returning the correct type
-        return cachedFlights as FlightWithDetails[];
+        // Apply filters and sorting to cached results
+        cachedFlights = filterCachedFlights(cachedFlights, params, filters);
+        cachedFlights = sortCachedFlights(cachedFlights, params, sorting);
+        
+        return cachedFlights;
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An error occurred while searching flights';
@@ -50,6 +69,59 @@ export const useFlightSearch = () => {
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Helper function to filter cached flights
+  const filterCachedFlights = (
+    flights: FlightWithDetails[],
+    params: FlightSearchParams,
+    filters?: FlightFilters
+  ): FlightWithDetails[] => {
+    if (!filters) return flights;
+    
+    return flights.filter(flight => {
+      const price = getPrice(flight, params.cabinClass);
+      const availableSeats = getAvailableSeats(flight, params.cabinClass);
+      const totalPassengers = params.passengers.adults + params.passengers.children;
+      
+      // Filter by price range
+      if (filters.minPrice !== undefined && price < filters.minPrice) return false;
+      if (filters.maxPrice !== undefined && price > filters.maxPrice) return false;
+      
+      // Filter by airline
+      if (filters.airlineId && flight.airline_id !== filters.airlineId) return false;
+      
+      // Filter by seat availability
+      if (availableSeats < totalPassengers) return false;
+      
+      return true;
+    });
+  };
+  
+  // Helper function to sort cached flights
+  const sortCachedFlights = (
+    flights: FlightWithDetails[],
+    params: FlightSearchParams,
+    sorting?: FlightSorting
+  ): FlightWithDetails[] => {
+    if (!sorting || !sorting.sortBy) return flights;
+    
+    return [...flights].sort((a, b) => {
+      const multiplier = sorting.sortOrder === 'desc' ? -1 : 1;
+      
+      switch (sorting.sortBy) {
+        case 'price':
+          return multiplier * (getPrice(a, params.cabinClass) - getPrice(b, params.cabinClass));
+        case 'duration':
+          return multiplier * (a.duration_minutes - b.duration_minutes);
+        case 'departure_time':
+          return multiplier * (new Date(a.departure_time).getTime() - new Date(b.departure_time).getTime());
+        case 'arrival_time':
+          return multiplier * (new Date(a.arrival_time).getTime() - new Date(b.arrival_time).getTime());
+        default:
+          return 0;
+      }
+    });
   };
 
   const getAvailableSeats = (flight: Flight, cabinClass: CabinClass): number => {

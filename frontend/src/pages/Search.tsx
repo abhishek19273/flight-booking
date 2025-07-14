@@ -3,15 +3,23 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import FlightSearchForm from '@/components/FlightSearchForm';
 import { ModifySearchForm } from '@/components/ModifySearchForm';
 import FlightList from '@/components/FlightList';
-import { useFlightSearch, FlightSearchParams, FlightWithDetails } from '@/hooks/useFlightSearch';
+import FlightFilters from '@/components/FlightFilters';
+import { 
+  useFlightSearch, 
+  FlightSearchParams, 
+  FlightWithDetails,
+  FlightFilters as FilterOptions,
+  FlightSorting 
+} from '@/hooks/useFlightSearch';
 import { useIndexedDBFlightCache } from '@/hooks/useIndexedDBFlightCache';
 import { FlightResultsSkeleton } from '@/components/FlightResultsSkeleton';
-import { AlertCircle, Frown, Plane, ArrowLeft, WifiOff, Database } from 'lucide-react';
+import { AlertCircle, Frown, Plane, ArrowLeft, WifiOff, Database, SlidersHorizontal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 
 const SearchPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -28,9 +36,13 @@ const SearchPage: React.FC = () => {
   } = useIndexedDBFlightCache();
 
   const [results, setResults] = useState<FlightWithDetails[]>([]);
+  const [filteredResults, setFilteredResults] = useState<FlightWithDetails[]>([]);
   const [searched, setSearched] = useState(false);
   const [currentSearch, setCurrentSearch] = useState<FlightSearchParams | null>(null);
   const [usingCachedResults, setUsingCachedResults] = useState(false);
+  const [currentFilters, setCurrentFilters] = useState<FilterOptions>({});
+  const [currentSorting, setCurrentSorting] = useState<FlightSorting>({ sortBy: 'price', sortOrder: 'asc' });
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   const initialSearchParams = useMemo(() => {
     const from = searchParams.get('from');
@@ -72,48 +84,96 @@ const SearchPage: React.FC = () => {
     setCurrentSearch(params);
     setSearched(true);
     setUsingCachedResults(false);
+    setCurrentFilters({});
+    setCurrentSorting({ sortBy: 'price', sortOrder: 'asc' });
 
     try {
-      // First check for cached results if we're offline or if cache is available
       if (isCacheAvailable) {
         const cachedResults = await getCachedResults(params);
         
         if (isOffline && cachedResults) {
           setResults(cachedResults);
+          setFilteredResults(cachedResults);
           setUsingCachedResults(true);
           return;
         }
         
-        // If online but we have cached results, use them while fetching fresh data
         if (cachedResults) {
           setResults(cachedResults);
+          setFilteredResults(cachedResults);
           setUsingCachedResults(true);
         }
       }
       
-      // If we're online, fetch fresh results
       if (!isOffline) {
-        const searchResults = await searchFlights(params);
+        const searchResults = await searchFlights(params, currentFilters, currentSorting);
         setResults(searchResults);
+        setFilteredResults(searchResults);
         setUsingCachedResults(false);
         
-        // Cache the results for future use
         if (isCacheAvailable) {
-          await saveResults(params, searchResults);
+          await saveResults(searchResults);
         }
-      } else if (!isCacheAvailable || !(await getCachedResults(params))) {
-        // We're offline and have no cached results
-        throw new Error('No internet connection and no cached results available');
       }
     } catch (err) {
-      if (isOffline) {
+      toast({
+        title: "Error searching flights",
+        description: err instanceof Error ? err.message : "An unexpected error occurred",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleFilterChange = async (filters: FilterOptions) => {
+    setCurrentFilters(filters);
+    
+    if (currentSearch) {
+      try {
+        if (isOffline) {
+          const filteredResults = await searchFlights(currentSearch, filters, currentSorting);
+          setFilteredResults(filteredResults);
+        } else {
+          const searchResults = await searchFlights(currentSearch, filters, currentSorting);
+          setFilteredResults(searchResults);
+        }
+      } catch (err) {
         toast({
-          title: 'Offline Mode',
-          description: 'You are currently offline with no cached results for this search.',
-          variant: 'destructive',
+          title: "Error applying filters",
+          description: err instanceof Error ? err.message : "An unexpected error occurred",
+          variant: "destructive"
         });
       }
-      setResults([]);
+    }
+  };
+
+  const handleSortChange = async (sorting: FlightSorting) => {
+    setCurrentSorting(sorting);
+    
+    if (currentSearch) {
+      try {
+        if (isOffline) {
+          const sortedResults = await searchFlights(currentSearch, currentFilters, sorting);
+          setFilteredResults(sortedResults);
+        } else {
+          const searchResults = await searchFlights(currentSearch, currentFilters, sorting);
+          setFilteredResults(searchResults);
+        }
+      } catch (err) {
+        toast({
+          title: "Error applying sorting",
+          description: err instanceof Error ? err.message : "An unexpected error occurred",
+          variant: "destructive"
+        });
+      }
+    }
+  };
+
+  const handleResetFilters = async () => {
+    setCurrentFilters({});
+    setCurrentSorting({ sortBy: 'price', sortOrder: 'asc' });
+    
+    if (currentSearch && results.length > 0) {
+      setFilteredResults(results);
     }
   };
 
@@ -122,7 +182,6 @@ const SearchPage: React.FC = () => {
       handleSearch(initialSearchParams, false);
     }
     
-    // Clear expired cache entries when component mounts
     if (isCacheAvailable) {
       clearExpired();
     }
@@ -155,6 +214,39 @@ const SearchPage: React.FC = () => {
     }
   };
 
+  // Calculate unique airlines for filtering options
+  const airlines = useMemo(() => {
+    if (!results.length) return [];
+    
+    const uniqueAirlines = new Map();
+    results.forEach(flight => {
+      if (!uniqueAirlines.has(flight.airline.id)) {
+        uniqueAirlines.set(flight.airline.id, flight.airline);
+      }
+    });
+    
+    return Array.from(uniqueAirlines.values());
+  }, [results]);
+
+  // Calculate price range for filtering options
+  const priceRange = useMemo(() => {
+    if (!results.length || !currentSearch) return { min: 0, max: 1000 };
+    
+    const cabinClass = currentSearch.cabinClass;
+    const priceField = `${cabinClass.replace('-', '_')}_price` as keyof FlightWithDetails;
+    
+    let min = Number.MAX_SAFE_INTEGER;
+    let max = 0;
+    
+    results.forEach(flight => {
+      const price = flight[priceField] as number;
+      if (price < min) min = price;
+      if (price > max) max = price;
+    });
+    
+    return { min: Math.floor(min), max: Math.ceil(max) };
+  }, [results, currentSearch]);
+  
   if (!searched) {
     return (
       <div className="relative w-full h-screen">
@@ -181,6 +273,107 @@ const SearchPage: React.FC = () => {
       </div>
     );
   }
+
+  const renderResults = () => {
+    if (loading) {
+      return <FlightResultsSkeleton />
+    }
+
+    if (error) {
+      return (
+        <Alert variant="destructive" className="bg-red-900/50 border-red-800">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      );
+    }
+
+    if (filteredResults.length === 0 && searched) {
+      return (
+        <div className="text-center py-12">
+          <Frown className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+          <h3 className="text-xl font-semibold mb-2">No flights found</h3>
+          <p className="text-gray-400 mb-6">Try adjusting your search criteria or filters</p>
+          <Button onClick={() => navigate('/')} variant="outline" className="border-white/20 text-white hover:bg-white/10">
+            <ArrowLeft className="mr-2 h-4 w-4" /> New Search
+          </Button>
+        </div>
+      );
+    }
+
+    if (filteredResults.length > 0) {
+      return (
+        <div className="space-y-4">
+          {usingCachedResults && (
+            <Alert className="bg-blue-900/50 border-blue-800">
+              <Database className="h-4 w-4" />
+              <AlertTitle>Using cached results</AlertTitle>
+              <AlertDescription>
+                {isOffline ? 
+                  "You're offline. Showing previously cached results." : 
+                  "Showing cached results while fetching the latest data."}
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">
+              {filteredResults.length} {filteredResults.length === 1 ? 'flight' : 'flights'} found
+            </h2>
+            
+            <Sheet open={showMobileFilters} onOpenChange={setShowMobileFilters}>
+              <SheetTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="md:hidden border-white/20 text-white hover:bg-white/10"
+                >
+                  <SlidersHorizontal className="h-4 w-4 mr-2" />
+                  Filters
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-[300px] bg-gray-900 text-white border-white/20">
+                <FlightFilters
+                  minPrice={priceRange.min}
+                  maxPrice={priceRange.max}
+                  airlines={airlines}
+                  onFilterChange={handleFilterChange}
+                  onSortChange={handleSortChange}
+                  onReset={handleResetFilters}
+                  className="border-none shadow-none bg-transparent"
+                />
+              </SheetContent>
+            </Sheet>
+          </div>
+          
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="hidden md:block md:w-1/4 lg:w-1/5">
+              <FlightFilters
+                minPrice={priceRange.min}
+                maxPrice={priceRange.max}
+                airlines={airlines}
+                onFilterChange={handleFilterChange}
+                onSortChange={handleSortChange}
+                onReset={handleResetFilters}
+              />
+            </div>
+            
+            <div className="md:w-3/4 lg:w-4/5">
+              <FlightList 
+                flights={filteredResults} 
+                cabinClass={currentSearch?.cabinClass || 'economy'} 
+                onSelectFlight={handleSelectFlight}
+                tripType={currentSearch?.tripType || 'one-way'}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-800 text-white">
@@ -230,34 +423,7 @@ const SearchPage: React.FC = () => {
               </Alert>
             )}
             
-            {loading && !usingCachedResults && <FlightResultsSkeleton />}
-            {error && !loading && !usingCachedResults && (
-              <Card className="bg-red-500/20 border-red-500/50 p-8 rounded-lg">
-                <div className="flex flex-col items-center justify-center">
-                  <AlertCircle className="h-16 w-16 text-red-300 mb-4" />
-                  <h3 className="text-2xl font-bold text-white mb-2">Oops! Something went wrong.</h3>
-                  <p className="text-red-200 text-center">{error}</p>
-                </div>
-              </Card>
-            )}
-            {!loading && !error && results.length === 0 && !usingCachedResults && (
-              <Card className="bg-white/10 backdrop-blur-md border-white/20 p-8 rounded-lg">
-                <div className="flex flex-col items-center justify-center">
-                  <Frown className="h-16 w-16 text-blue-300 mb-4" />
-                  <h3 className="text-2xl font-bold text-white mb-2">No flights found</h3>
-                  <p className="text-blue-200 text-center">We couldn't find any flights matching your search criteria. <br />Please try adjusting your search.</p>
-                </div>
-              </Card>
-            )}
-            {results.length > 0 && (
-              <>
-                <FlightList 
-                  flights={results} 
-                  onSelectFlight={handleSelectFlight} 
-                  cabinClass={currentSearch?.cabinClass || 'economy'}
-                />
-              </>
-            )}
+            {renderResults()}
           </main>
         </div>
       </div>

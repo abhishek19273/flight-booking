@@ -4,9 +4,22 @@ import { FlightWithDetails, Airport, FlightSearchParams } from '../../types';
 /**
  * Search for flights based on search parameters
  * @param params Search parameters
+ * @param filters Optional filtering parameters
+ * @param sorting Optional sorting parameters
  * @returns List of flights matching search criteria
  */
-export const searchFlights = async (params: FlightSearchParams): Promise<FlightWithDetails[]> => {
+export const searchFlights = async (
+  params: FlightSearchParams,
+  filters?: {
+    minPrice?: number;
+    maxPrice?: number;
+    airlineId?: string;
+  },
+  sorting?: {
+    sortBy?: 'price' | 'duration' | 'departure_time' | 'arrival_time';
+    sortOrder?: 'asc' | 'desc';
+  }
+): Promise<FlightWithDetails[]> => {
   try {
     // Manually construct query params to match backend expectations (snake_case, flat structure)
     const queryParams = {
@@ -17,9 +30,19 @@ export const searchFlights = async (params: FlightSearchParams): Promise<FlightW
       adults: params.passengers.adults,
       children: params.passengers.children,
       infants: params.passengers.infants,
+      trip_type: params.tripType,
+      // Add return date if it exists
+      ...(params.returnDate && { return_date: new Date(params.returnDate).toISOString().split('T')[0] }),
+      // Add filters if they exist
+      ...(filters?.minPrice !== undefined && { min_price: filters.minPrice }),
+      ...(filters?.maxPrice !== undefined && { max_price: filters.maxPrice }),
+      ...(filters?.airlineId && { airline_id: filters.airlineId }),
+      // Add sorting if it exists
+      ...(sorting?.sortBy && { sort_by: sorting.sortBy }),
+      ...(sorting?.sortOrder && { sort_order: sorting.sortOrder }),
     };
 
-        const response = await axiosInstance.get('/flights/search', { params: queryParams });
+    const response = await axiosInstance.get('/flights/search', { params: queryParams });
     return response.data;
   } catch (error: any) {
     console.error('Error searching flights:', error.response?.data || error.message);
