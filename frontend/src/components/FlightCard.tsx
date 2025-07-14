@@ -34,53 +34,53 @@ const FlightCard: React.FC<FlightCardProps> = ({ flight, cabinClass, onSelectFli
 
   return (
     <Card className="bg-white/10 backdrop-blur-md border-white/20 shadow-lg text-white mb-4 transition-all duration-300 hover:bg-white/20 hover:shadow-2xl">
-      <CardContent className="p-4 md:p-6 grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
-        {/* Airline Info */}
-        <div className="col-span-1 flex items-center gap-3">
-          <img src={flight.airline.logo_url} alt={`${flight.airline.name} logo`} className="h-10 w-10 rounded-full bg-white p-1 object-contain" />
-          <div>
-            <p className="font-bold text-lg">{flight.airline.name}</p>
-            <p className="text-xs text-gray-300">{flight.flight_number}</p>
-          </div>
-        </div>
-
-        {/* Flight Times & Route */}
-        <div className="col-span-1 md:col-span-2 flex items-center justify-between md:justify-center gap-4">
-          <div className="text-center">
-            <p className="text-2xl font-bold">{formatTime(flight.departure_time)}</p>
-            <p className="text-lg font-semibold text-gray-200">{flight.origin_airport.iata_code}</p>
-            <p className="text-xs text-gray-400">{formatDate(flight.departure_time)}</p>
-          </div>
-          <div className="flex flex-col items-center text-center flex-grow mx-2">
-            <div className="flex items-center w-full">
-              <Separator className="flex-grow bg-gray-500" />
-              <Plane className="h-5 w-5 text-white mx-2" />
-              <Separator className="flex-grow bg-gray-500" />
+      <CardContent className="p-4 md:p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-y-4 lg:gap-x-4 items-center">
+          {/* Section 1: Airline Info (Mobile: full width, LG: 3 cols) */}
+          <div className="lg:col-span-3 flex flex-row items-center gap-3">
+            <img src={flight.airline.logo_url} alt={`${flight.airline.name} logo`} className="h-10 w-10 rounded-full bg-white p-1 object-contain" />
+            <div className="flex-grow">
+              <p className="font-bold text-base sm:text-lg">{flight.airline.name}</p>
+              <p className="text-xs text-gray-300">{flight.flight_number}</p>
             </div>
-            <p className="text-xs text-gray-400 mt-1">{Math.floor(flight.duration_minutes / 60)}h {flight.duration_minutes % 60}m</p>
           </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold">{formatTime(flight.arrival_time)}</p>
-            <p className="text-lg font-semibold text-gray-200">{flight.destination_airport.iata_code}</p>
-            <p className="text-xs text-gray-400">{formatDate(flight.arrival_time)}</p>
+
+          {/* Section 2: Flight Times & Route (Mobile: full width, LG: 5 cols) */}
+          <div className="lg:col-span-5 flex items-center justify-between gap-2">
+            <div className="text-center">
+              <p className="text-xl sm:text-2xl font-bold">{formatTime(flight.departure_time)}</p>
+              <p className="text-base sm:text-lg font-semibold text-gray-200">{flight.origin_airport.iata_code}</p>
+              <p className="text-xs text-gray-400 hidden sm:block">{formatDate(flight.departure_time)}</p>
+            </div>
+            <div className="flex flex-col items-center text-center flex-grow mx-2">
+              <p className="text-xs text-gray-400 mb-1">{Math.floor(flight.duration_minutes / 60)}h {flight.duration_minutes % 60}m</p>
+              <div className="flex items-center w-full">
+                <Separator className="flex-grow bg-gray-500" />
+                <Plane className="h-5 w-5 text-white mx-2" />
+                <Separator className="flex-grow bg-gray-500" />
+              </div>
+              <div className="mt-1">{renderStopInfo()}</div>
+            </div>
+            <div className="text-center">
+              <p className="text-xl sm:text-2xl font-bold">{formatTime(flight.arrival_time)}</p>
+              <p className="text-base sm:text-lg font-semibold text-gray-200">{flight.destination_airport.iata_code}</p>
+              <p className="text-xs text-gray-400 hidden sm:block">{formatDate(flight.arrival_time)}</p>
+            </div>
           </div>
-        </div>
 
-        {/* Stops Info */}
-        <div className="col-span-1 hidden md:flex flex-col items-center justify-center">
-          {renderStopInfo()}
-        </div>
-
-        {/* Price & Booking */}
-        <div className="col-span-1 md:col-span-1 flex flex-col items-center md:items-end justify-center text-center md:text-right">
-          <p className="text-3xl font-extrabold text-white">${price.toFixed(2)}</p>
-          <p className="text-xs text-gray-300 capitalize mb-3">per {cabinClass} seat</p>
-          <Button 
-            onClick={() => onSelectFlight(flight)} 
-            className="w-full md:w-auto bg-blue-500 hover:bg-blue-400 text-white font-bold transition-colors duration-300 shadow-lg"
-          >
-            Select Flight
-          </Button>
+          {/* Section 3: Price & Booking (Mobile: full width, LG: 4 cols) */}
+          <div className="lg:col-span-4 flex flex-col sm:flex-row items-center justify-between lg:justify-end gap-4 border-t border-white/10 lg:border-none pt-4 lg:pt-0">
+            <div className="text-center sm:text-left lg:text-right">
+              <p className="text-2xl sm:text-3xl font-extrabold text-white">${price.toFixed(2)}</p>
+              <p className="text-xs text-gray-300 capitalize">per {cabinClass.replace('-', ' ')} seat</p>
+            </div>
+            <Button 
+              onClick={() => onSelectFlight(flight)} 
+              className="w-full sm:w-auto bg-blue-500 hover:bg-blue-400 text-white font-bold transition-colors duration-300 shadow-lg px-6 py-3 text-base"
+            >
+              Select
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

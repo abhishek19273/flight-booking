@@ -1,8 +1,9 @@
 // IndexedDB service for flight search results caching
 const DB_NAME = 'sky-bound-journeys-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented version
 const FLIGHT_STORE = 'flight-search-results';
 const SEARCH_PARAMS_STORE = 'search-params';
+const AIRPORT_STORE = 'airports';
 
 interface DBSchema {
   'flight-search-results': {
@@ -60,6 +61,16 @@ export const initDB = (): Promise<IDBDatabase> => {
       
       if (!db.objectStoreNames.contains(SEARCH_PARAMS_STORE)) {
         db.createObjectStore(SEARCH_PARAMS_STORE, { keyPath: 'key' });
+      }
+
+      // Create airport store with indexes
+      if (!db.objectStoreNames.contains(AIRPORT_STORE)) {
+        const airportStore = db.createObjectStore(AIRPORT_STORE, { keyPath: 'id' });
+        airportStore.createIndex('iata_code', 'iata_code', { unique: false });
+        airportStore.createIndex('name', 'name', { unique: false });
+        airportStore.createIndex('city', 'city', { unique: false });
+        // A composite index for searching multiple fields
+        airportStore.createIndex('search_terms', ['name', 'city', 'iata_code'], { unique: false });
       }
     };
   });
@@ -192,4 +203,97 @@ export const getCachedSearchParams = async (): Promise<any[]> => {
 // Check if the browser is online
 export const isOnline = (): boolean => {
   return navigator.onLine;
+};
+
+// --- Airport Caching Functions ---
+
+export interface Airport {
+  id: string;
+  iata_code: string;
+  name: string;
+  city: string;
+  country: string;
+}
+
+// Save multiple airports to the cache
+export const saveAirportsToCache = async (airports: Airport[]): Promise<void> => {
+  try {
+    const db = await initDB();
+    const transaction = db.transaction(AIRPORT_STORE, 'readwrite');
+    const store = transaction.objectStore(AIRPORT_STORE);
+
+    for (const airport of airports) {
+      store.put(airport);
+    }
+
+    return new Promise((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(new Error('Error saving airports to cache'));
+    });
+  } catch (error) {
+    console.error('Failed to save airports to cache:', error);
+    throw error;
+  }
+};
+
+// Search for airports in the cache
+export const searchAirportsInCache = async (query: string, limit: number = 10): Promise<Airport[]> => {
+  if (!query.trim()) return [];
+
+  try {
+    const db = await initDB();
+    const transaction = db.transaction(AIRPORT_STORE, 'readonly');
+    const store = transaction.objectStore(AIRPORT_STORE);
+    const results: Airport[] = [];
+    const lowerCaseQuery = query.toLowerCase();
+
+    return new Promise((resolve, reject) => {
+      const request = store.openCursor();
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor && results.length < limit) {
+          const airport = cursor.value as Airport;
+          if (
+            airport.name.toLowerCase().includes(lowerCaseQuery) ||
+            airport.city.toLowerCase().includes(lowerCaseQuery) ||
+            airport.iata_code.toLowerCase().includes(lowerCaseQuery)
+          ) {
+            results.push(airport);
+          }
+          cursor.continue();
+        } else {
+          resolve(results);
+        }
+      };
+
+      request.onerror = () => {
+        reject(new Error('Error searching airports in cache'));
+      };
+    });
+  } catch (error) {
+    console.error('Failed to search airports in cache:', error);
+    return [];
+  }
+};
+
+// Check if the airport cache is populated
+export const isAirportCachePopulated = async (): Promise<boolean> => {
+  try {
+    const db = await initDB();
+    const transaction = db.transaction(AIRPORT_STORE, 'readonly');
+    const store = transaction.objectStore(AIRPORT_STORE);
+
+    return new Promise((resolve, reject) => {
+      const request = store.count();
+      request.onsuccess = () => {
+        resolve(request.result > 0);
+      };
+      request.onerror = () => {
+        reject(new Error('Error checking if airport cache is populated'));
+      };
+    });
+  } catch (error) {
+    console.error('Failed to check airport cache population:', error);
+    return false;
+  }
 };

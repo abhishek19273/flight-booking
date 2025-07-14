@@ -5,6 +5,8 @@ import { Label } from '@/components/ui/label';
 import { Plus, Minus, Search } from 'lucide-react';
 import { FlightSearchParams } from '@/hooks/useFlightSearch';
 import { DatePicker } from '@/components/DatePicker';
+import { AutocompleteInput } from '@/components/ui/AutocompleteInput';
+import { Airport } from '@/utils/indexedDBService';
 
 interface ModifySearchFormProps {
   onSearch: (params: FlightSearchParams) => void;
@@ -13,19 +15,29 @@ interface ModifySearchFormProps {
 }
 
 export const ModifySearchForm: React.FC<ModifySearchFormProps> = ({ onSearch, initialState, loading }) => {
+  const [from, setFrom] = useState(initialState.from);
+  const [to, setTo] = useState(initialState.to);
+  const [fromAirport, setFromAirport] = useState<Airport | null>(null);
+  const [toAirport, setToAirport] = useState<Airport | null>(null);
   const [departDate, setDepartDate] = useState<Date | undefined>();
   const [passengers, setPassengers] = useState(initialState.passengers);
 
   useEffect(() => {
+    setFrom(initialState.from);
+    setTo(initialState.to);
     setDepartDate(new Date(initialState.departureDate));
     setPassengers(initialState.passengers);
+    // We don't have the full airport objects here, so we'll start with them as null.
+    // The search logic will fall back to the initial IATA codes if they are not changed.
   }, [initialState]);
 
   const handleUpdateSearch = () => {
-    if (!departDate) return;
+    if (!departDate || !from || !to) return;
 
     const searchParams: FlightSearchParams = {
       ...initialState,
+      from: fromAirport ? fromAirport.iata_code : initialState.from,
+      to: toAirport ? toAirport.iata_code : initialState.to,
       departureDate: departDate.toISOString(),
       passengers,
     };
@@ -39,6 +51,31 @@ export const ModifySearchForm: React.FC<ModifySearchFormProps> = ({ onSearch, in
         <CardTitle className="text-2xl font-bold text-white">Modify Search</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* From and To */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium text-gray-200">From</Label>
+          <AutocompleteInput
+            value={from}
+            onValueChange={setFrom}
+            onSelect={(airport) => {
+              setFromAirport(airport);
+              setFrom(`${airport.city} (${airport.iata_code})`);
+            }}
+            placeholder="Origin city or airport"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-sm font-medium text-gray-200">To</Label>
+          <AutocompleteInput
+            value={to}
+            onValueChange={setTo}
+            onSelect={(airport) => {
+              setToAirport(airport);
+              setTo(`${airport.city} (${airport.iata_code})`);
+            }}
+            placeholder="Destination city or airport"
+          />
+        </div>
         {/* Departure Date */}
         <div className="space-y-2">
           <Label className="text-sm font-medium text-gray-200">Departure Date</Label>

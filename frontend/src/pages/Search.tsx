@@ -164,14 +164,14 @@ const SearchPage: React.FC = () => {
           alt="Woman on a swing overlooking a beautiful landscape"
           className="absolute inset-0 w-full h-full object-cover"
         />
-        <div className="relative z-20 flex items-center justify-center h-full">
-          <div className="w-full max-w-2xl bg-white/10 backdrop-blur-md rounded-2xl p-8 shadow-2xl">
-            <div className="text-center mb-8">
-              <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl md:text-6xl">
+        <div className="relative z-20 flex items-center justify-center h-full p-4">
+          <div className="w-full max-w-3xl bg-white/10 backdrop-blur-md rounded-2xl p-4 sm:p-8 shadow-2xl">
+            <div className="text-center mb-6 sm:mb-8">
+              <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl md:text-5xl">
                 <span className="block">Find Your Perfect Flight</span>
-                <span className="block text-blue-300">Book Your Next Adventure</span>
+                <span className="block text-blue-300 mt-1">Book Your Next Adventure</span>
               </h1>
-              <p className="mt-3 max-w-md mx-auto text-base text-blue-100 sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
+              <p className="mt-3 max-w-md mx-auto text-sm text-blue-100 sm:text-base md:mt-5 md:text-lg md:max-w-3xl">
                 Enter your travel details below to find the best flights for your journey.
               </p>
             </div>

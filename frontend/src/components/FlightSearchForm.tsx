@@ -6,7 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ArrowLeftRight, Plus, Minus, Search } from 'lucide-react';
 import { FlightSearchParams } from '@/hooks/useFlightSearch';
-import { AirportSearchInput } from '@/components/AirportSearchInput';
+import { AutocompleteInput } from '@/components/ui/AutocompleteInput';
+import { Airport } from '@/utils/indexedDBService';
 import { DatePicker } from '@/components/DatePicker';
 
 interface FlightSearchFormProps {
@@ -18,6 +19,8 @@ const FlightSearchForm: React.FC<FlightSearchFormProps> = ({ onSearch, initialSt
   const [tripType, setTripType] = useState<'one-way' | 'round-trip'>('round-trip');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [fromAirport, setFromAirport] = useState<Airport | null>(null);
+  const [toAirport, setToAirport] = useState<Airport | null>(null);
   const [departDate, setDepartDate] = useState<Date | undefined>();
   const [returnDate, setReturnDate] = useState<Date | undefined>();
   const [cabinClass, setCabinClass] = useState('economy');
@@ -32,6 +35,8 @@ const FlightSearchForm: React.FC<FlightSearchFormProps> = ({ onSearch, initialSt
       setTripType(initialState.tripType);
       setFrom(initialState.from);
       setTo(initialState.to);
+      // Note: We don't have the full airport object here, so we'll just set the text
+      // The user will have to re-select to get the full object benefits, which is an acceptable UX for this edge case.
       setDepartDate(new Date(initialState.departureDate));
       setReturnDate(initialState.returnDate ? new Date(initialState.returnDate) : undefined);
       setCabinClass(initialState.cabinClass);
@@ -40,17 +45,23 @@ const FlightSearchForm: React.FC<FlightSearchFormProps> = ({ onSearch, initialSt
   }, [initialState]);
 
   const swapDestinations = () => {
-    const temp = from;
-    setFrom(to);
-    setTo(temp);
+    const tempFrom = from;
+    const tempTo = to;
+    const tempFromAirport = fromAirport;
+    const tempToAirport = toAirport;
+
+    setFrom(tempTo);
+    setTo(tempFrom);
+    setFromAirport(tempToAirport);
+    setToAirport(tempFromAirport);
   };
 
   const handleSearch = () => {
-    if (!from || !to || !departDate) return;
+    if (!fromAirport || !toAirport || !departDate) return;
 
     const searchParams: FlightSearchParams = {
-      from,
-      to,
+      from: fromAirport.iata_code,
+      to: toAirport.iata_code,
       departureDate: departDate.toISOString(),
       returnDate: tripType === 'round-trip' && returnDate ? returnDate.toISOString() : undefined,
       passengers,
@@ -85,19 +96,31 @@ const FlightSearchForm: React.FC<FlightSearchFormProps> = ({ onSearch, initialSt
           </div>
 
           {/* Origin and Destination */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
-            <AirportSearchInput
-              label="From"
-              placeholder="Search airports, cities, or codes..."
-              value={from}
-              onChange={setFrom}
-            />
-            <AirportSearchInput
-              label="To"
-              placeholder="Search airports, cities, or codes..."
-              value={to}
-              onChange={setTo}
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start relative">
+            <div className="space-y-2">
+              <Label>From</Label>
+              <AutocompleteInput
+                placeholder="e.g., New York (JFK)"
+                value={from}
+                onValueChange={setFrom}
+                onSelect={(airport) => {
+                  setFromAirport(airport);
+                  setFrom(`${airport.city} (${airport.iata_code})`);
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>To</Label>
+              <AutocompleteInput
+                placeholder="e.g., London (LHR)"
+                value={to}
+                onValueChange={setTo}
+                onSelect={(airport) => {
+                  setToAirport(airport);
+                  setTo(`${airport.city} (${airport.iata_code})`);
+                }}
+              />
+            </div>
             <Button
               type="button"
               variant="ghost"
@@ -258,7 +281,7 @@ const FlightSearchForm: React.FC<FlightSearchFormProps> = ({ onSearch, initialSt
               size="lg" 
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3"
               onClick={handleSearch}
-              disabled={!from || !to || !departDate}
+              disabled={!fromAirport || !toAirport || !departDate}
             >
               <Search className="mr-2 h-5 w-5" />
               Search Flights
