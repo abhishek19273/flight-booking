@@ -150,7 +150,7 @@ async def update_booking(booking_id: str, booking_update: BookingUpdate, current
             update_type = 'cancelled'
         
         await EmailNotificationService.send_booking_update(
-            email_to=user_email,
+            email_to=[user_email],
             booking_details=updated_booking,
             update_type=update_type
         )
@@ -213,7 +213,7 @@ async def cancel_booking(booking_id: str, current_user: dict = Depends(get_curre
         user_email = current_user.get('email')
         if user_email:
             await EmailNotificationService.send_booking_update(
-                email_to=user_email,
+                email_to=[user_email],
                 booking_details=booking_details,
                 update_type='cancelled'
             )

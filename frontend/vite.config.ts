@@ -10,7 +10,6 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
     proxy: {
       // Proxy API requests to the backend server
-      '/auth': 'http://localhost:3000',
       '/users': 'http://localhost:3000',
       '/airports': 'http://localhost:3000',
       '/flights': 'http://localhost:3000',

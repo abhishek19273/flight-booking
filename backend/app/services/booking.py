@@ -1,8 +1,12 @@
 import uuid
+import logging
 from typing import Dict, Any, List
 from app.database.init_db import get_supabase_client
 from app.services.email import EmailNotificationService
 from fastapi import HTTPException, status
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 def generate_booking_reference() -> str:
     """
@@ -91,14 +95,21 @@ async def create_booking(user_id: str, booking_data: Dict[str, Any]) -> Dict[str
     booking_details = await get_booking_details_by_id(booking_id, user_id=user_id)
     
     # Send confirmation email
-    user_email_response = supabase.table("profiles").select("email").eq("user_id", user_id).execute()
-    if user_email_response.data and len(user_email_response.data) > 0:
-        user_email = user_email_response.data[0].get("email")
-        if user_email:
-            await EmailNotificationService.send_booking_confirmation(
-                email_to=user_email,
-                booking_details=booking_details
-            )
+    try:
+        user_email_response = supabase.table("profiles").select("email").eq("user_id", user_id).execute()
+        if user_email_response.data:
+            user_email = user_email_response.data[0].get("email")
+            if user_email:
+                await EmailNotificationService.send_booking_confirmation(
+                    email_to=[user_email],  # Pass email as a list
+                    booking_details=booking_details
+                )
+            else:
+                logger.warning(f"Email field is empty in profile for user_id: {user_id}")
+        else:
+            logger.warning(f"No profile found for user_id: {user_id}. Cannot send confirmation email.")
+    except Exception as e:
+        logger.error(f"An error occurred while fetching user email or sending confirmation for user_id {user_id}: {e}", exc_info=True)
     
     return booking_details
 

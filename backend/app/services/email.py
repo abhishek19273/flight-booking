@@ -6,6 +6,7 @@ from pydantic import EmailStr
 from jinja2 import Environment, select_autoescape, FileSystemLoader
 from pathlib import Path
 import logging
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -96,12 +97,23 @@ class EmailNotificationService:
         Returns:
             bool: True if email was sent successfully, False otherwise
         """
+        logger.info(f"Attempting to send email to: {email_to} with subject: '{subject}'")
+        logger.debug(f"Using mail config: {conf.dict()}")
+
+        if conf.MAIL_SERVER == "dummy.example.com":
+            logger.warning("Dummy email configuration is active. No email will be sent.")
+            return False
+
         try:
             # Load template
             template = env.get_template(f"{template_name}.html")
             
+            # Add current time to the context for use in templates
+            render_context = context.copy()
+            render_context['now'] = datetime.now()
+
             # Render template with context
-            html_content = template.render(**context)
+            html_content = template.render(**render_context)
             
             # Create message
             message = MessageSchema(
@@ -116,7 +128,7 @@ class EmailNotificationService:
             fm = FastMail(conf)
             
             # Send email
-            await fm.send_message(message, template_name=template_name)
+            await fm.send_message(message)
             logger.info(f"Email sent successfully to {', '.join(email_to)}")
             return True
             
@@ -127,40 +139,40 @@ class EmailNotificationService:
             logger.error(f"Unexpected error sending email: {str(e)}")
             return False
     
-    @classmethod
-    async def send_booking_confirmation(
-        cls,
-        email_to: EmailStr,
-        booking_details: Dict[str, Any]
-    ) -> bool:
+    @staticmethod
+    async def send_booking_confirmation(email_to: List[EmailStr], booking_details: Dict[str, Any]):
         """
-        Send booking confirmation email
-        
+        Send a booking confirmation email.
+
         Args:
-            email_to: Recipient email address
-            booking_details: Dictionary containing booking information
-            
-        Returns:
-            bool: True if email was sent successfully, False otherwise
+            email_to: A list containing the recipient's email address.
+            booking_details: A dictionary containing the booking details.
         """
-        subject = f"Booking Confirmation - {booking_details.get('booking_reference', '')}"
-        
+        subject = f"Booking Confirmation - {booking_details['booking_reference']}"
+        template_name = "booking_confirmation"
         context = {
             "booking": booking_details,
-            "user_name": f"{booking_details.get('user', {}).get('first_name', '')} {booking_details.get('user', {}).get('last_name', '')}",
         }
-        
-        return await cls.send_email(
-            email_to=[email_to],
-            subject=subject,
-            template_name="booking_confirmation",
-            context=context
-        )
+
+        recipient = email_to[0] if email_to else None
+        if not recipient:
+            logger.error("No recipient provided for booking confirmation.")
+            return
+
+        try:
+            await EmailNotificationService.send_email(
+                email_to=email_to,  # Pass the list directly
+                subject=subject,
+                template_name=template_name,
+                context=context
+            )
+            logger.info(f"Booking confirmation email sent to {recipient}")
+        except Exception as e:
+            logger.error(f"Failed to send booking confirmation to {recipient}: {e}", exc_info=True)
     
-    @classmethod
+    @staticmethod
     async def send_booking_update(
-        cls,
-        email_to: EmailStr,
+        email_to: List[EmailStr],
         booking_details: Dict[str, Any],
         update_type: str
     ) -> bool:
@@ -183,8 +195,8 @@ class EmailNotificationService:
             "update_type": update_type
         }
         
-        return await cls.send_email(
-            email_to=[email_to],
+        return await EmailNotificationService.send_email(
+            email_to=email_to,
             subject=subject,
             template_name="booking_update",
             context=context
