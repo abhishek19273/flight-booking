@@ -4,12 +4,14 @@ import FlightSearchForm from '@/components/FlightSearchForm';
 import { ModifySearchForm } from '@/components/ModifySearchForm';
 import FlightList from '@/components/FlightList';
 import { useFlightSearch, FlightSearchParams, FlightWithDetails } from '@/hooks/useFlightSearch';
+import { useIndexedDBFlightCache } from '@/hooks/useIndexedDBFlightCache';
 import { FlightResultsSkeleton } from '@/components/FlightResultsSkeleton';
-import { AlertCircle, Frown, Plane, ArrowLeft } from 'lucide-react';
+import { AlertCircle, Frown, Plane, ArrowLeft, WifiOff, Database } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const SearchPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -17,10 +19,18 @@ const SearchPage: React.FC = () => {
   const { searchFlights, loading, error } = useFlightSearch();
   const { toast } = useToast();
   const { user } = useAuth();
+  const { 
+    getCachedResults, 
+    saveResults, 
+    clearExpired, 
+    isCacheAvailable, 
+    isOffline 
+  } = useIndexedDBFlightCache();
 
   const [results, setResults] = useState<FlightWithDetails[]>([]);
   const [searched, setSearched] = useState(false);
   const [currentSearch, setCurrentSearch] = useState<FlightSearchParams | null>(null);
+  const [usingCachedResults, setUsingCachedResults] = useState(false);
 
   const initialSearchParams = useMemo(() => {
     const from = searchParams.get('from');
@@ -61,10 +71,48 @@ const SearchPage: React.FC = () => {
 
     setCurrentSearch(params);
     setSearched(true);
+    setUsingCachedResults(false);
+
     try {
-      const searchResults = await searchFlights(params);
-      setResults(searchResults);
+      // First check for cached results if we're offline or if cache is available
+      if (isCacheAvailable) {
+        const cachedResults = await getCachedResults(params);
+        
+        if (isOffline && cachedResults) {
+          setResults(cachedResults);
+          setUsingCachedResults(true);
+          return;
+        }
+        
+        // If online but we have cached results, use them while fetching fresh data
+        if (cachedResults) {
+          setResults(cachedResults);
+          setUsingCachedResults(true);
+        }
+      }
+      
+      // If we're online, fetch fresh results
+      if (!isOffline) {
+        const searchResults = await searchFlights(params);
+        setResults(searchResults);
+        setUsingCachedResults(false);
+        
+        // Cache the results for future use
+        if (isCacheAvailable) {
+          await saveResults(params, searchResults);
+        }
+      } else if (!isCacheAvailable || !(await getCachedResults(params))) {
+        // We're offline and have no cached results
+        throw new Error('No internet connection and no cached results available');
+      }
     } catch (err) {
+      if (isOffline) {
+        toast({
+          title: 'Offline Mode',
+          description: 'You are currently offline with no cached results for this search.',
+          variant: 'destructive',
+        });
+      }
       setResults([]);
     }
   };
@@ -73,7 +121,12 @@ const SearchPage: React.FC = () => {
     if (initialSearchParams) {
       handleSearch(initialSearchParams, false);
     }
-  }, [initialSearchParams]);
+    
+    // Clear expired cache entries when component mounts
+    if (isCacheAvailable) {
+      clearExpired();
+    }
+  }, [initialSearchParams, isCacheAvailable, clearExpired]);
 
   const handleSelectFlight = (flight: FlightWithDetails) => {
     if (!user) {
@@ -157,8 +210,28 @@ const SearchPage: React.FC = () => {
           </aside>
 
           <main className="lg:col-span-3">
-            {loading && <FlightResultsSkeleton />}
-            {error && !loading && (
+            {isOffline && (
+              <Alert className="mb-4 bg-amber-500/20 border-amber-500/50">
+                <WifiOff className="h-4 w-4 text-amber-300" />
+                <AlertTitle className="text-amber-200">Offline Mode</AlertTitle>
+                <AlertDescription className="text-amber-100">
+                  You are currently offline. {usingCachedResults ? 'Showing cached results.' : 'No cached results available for this search.'}
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {usingCachedResults && !isOffline && (
+              <Alert className="mb-4 bg-blue-500/20 border-blue-500/50">
+                <Database className="h-4 w-4 text-blue-300" />
+                <AlertTitle className="text-blue-200">Using Cached Results</AlertTitle>
+                <AlertDescription className="text-blue-100">
+                  Showing cached results while fetching the latest data...
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {loading && !usingCachedResults && <FlightResultsSkeleton />}
+            {error && !loading && !usingCachedResults && (
               <Card className="bg-red-500/20 border-red-500/50 p-8 rounded-lg">
                 <div className="flex flex-col items-center justify-center">
                   <AlertCircle className="h-16 w-16 text-red-300 mb-4" />
@@ -167,7 +240,7 @@ const SearchPage: React.FC = () => {
                 </div>
               </Card>
             )}
-            {!loading && !error && results.length === 0 && (
+            {!loading && !error && results.length === 0 && !usingCachedResults && (
               <Card className="bg-white/10 backdrop-blur-md border-white/20 p-8 rounded-lg">
                 <div className="flex flex-col items-center justify-center">
                   <Frown className="h-16 w-16 text-blue-300 mb-4" />
@@ -176,12 +249,14 @@ const SearchPage: React.FC = () => {
                 </div>
               </Card>
             )}
-            {!loading && !error && results.length > 0 && (
-              <FlightList 
-                flights={results} 
-                onSelectFlight={handleSelectFlight} 
-                cabinClass={currentSearch?.cabinClass || 'economy'}
-              />
+            {results.length > 0 && (
+              <>
+                <FlightList 
+                  flights={results} 
+                  onSelectFlight={handleSelectFlight} 
+                  cabinClass={currentSearch?.cabinClass || 'economy'}
+                />
+              </>
             )}
           </main>
         </div>
