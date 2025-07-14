@@ -55,6 +55,7 @@ def upgrade() -> None:
     $$ LANGUAGE plpgsql SECURITY DEFINER;
     """)
 
+    op.execute("DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;")
     op.execute("""
     CREATE TRIGGER on_auth_user_created
       AFTER INSERT ON auth.users
