@@ -47,8 +47,6 @@ export interface FlightWithDetails extends Flight {
   airline: Airline;
   origin_airport: Airport;
   destination_airport: Airport;
-  is_return?: boolean;
-  returnFlightId?: string; // Reference to paired return flight for round-trip selections
 }
 
 // Flight search types
