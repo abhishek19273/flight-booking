@@ -1,20 +1,51 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { createBooking, generateBookingReference } from '@/services/api/bookings';
 import { useFlightSearch } from '@/hooks/useFlightSearch';
+import { createBooking } from '@/services/api/bookings';
 import type { FlightWithDetails } from '@/types';
-import { Plane, Users, CreditCard, ArrowLeft, CheckCircle } from 'lucide-react';
+import { ArrowLeft, CreditCard, Plane, Users } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
 
-interface BookingData {
+interface OneWayBookingData {
   flight: FlightWithDetails;
   searchParams: any;
+}
+
+interface RoundTripBookingData {
+  outboundFlight: FlightWithDetails;
+  returnFlight: FlightWithDetails;
+  searchParams: any;
+}
+
+type BookingData = OneWayBookingData | RoundTripBookingData;
+
+// Form Type Definitions
+export interface PassengerForm {
+  type: 'adult' | 'child' | 'infant';
+  first_name: string;
+  last_name: string;
+  date_of_birth: string;
+  passport_number: string;
+  nationality: string;
+}
+
+export interface PaymentForm {
+  number: string;
+  expiry: string;
+  cvc: string;
+  name: string;
+}
+
+export interface BookingFormValues {
+  passengers: PassengerForm[];
+  payment: PaymentForm;
 }
 
 const Booking: React.FC = () => {
@@ -25,19 +56,45 @@ const Booking: React.FC = () => {
   
   const [bookingData, setBookingData] = useState<BookingData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [passengers, setPassengers] = useState<any[]>([]);
-  const [cardDetails, setCardDetails] = useState({
-    number: '',
-    expiry: '',
-    cvc: '',
-    name: ''
+
+  const {
+    register,
+    handleSubmit,
+    control,
+    formState: { errors, isValid },
+  } = useForm<BookingFormValues>({
+    mode: 'onTouched',
+    defaultValues: {
+      passengers: Array.from({ length: 0 }, (_, i) => ({
+        type: i === 0 ? 'adult' : 'child', // Simplified logic
+        first_name: '',
+        last_name: '',
+        date_of_birth: '',
+        passport_number: '',
+        nationality: '',
+      })),
+      payment: {
+        number: '',
+        expiry: '',
+        cvc: '',
+        name: '',
+      },
+    },
+  });
+
+  const { fields, replace } = useFieldArray({
+    control,
+    name: 'passengers',
   });
 
   useEffect(() => {
-    // Get selected flight from sessionStorage
-    const storedData = sessionStorage.getItem('selectedFlight');
-    if (storedData) {
-      const data: BookingData = JSON.parse(storedData);
+    // Check for one-way flight booking
+    const storedOneWayData = sessionStorage.getItem('selectedFlight');
+    // Check for round-trip flight booking
+    const storedRoundTripData = sessionStorage.getItem('selectedRoundTrip');
+    
+    if (storedOneWayData) {
+      const data = JSON.parse(storedOneWayData) as OneWayBookingData;
       setBookingData(data);
       
       // Initialize passenger forms
@@ -45,7 +102,7 @@ const Booking: React.FC = () => {
                              data.searchParams.passengers.children + 
                              data.searchParams.passengers.infants;
       
-      const initialPassengers = Array.from({ length: totalPassengers }, (_, index) => ({
+      const initialPassengers: PassengerForm[] = Array.from({ length: totalPassengers }, (_, index) => ({
         type: index < data.searchParams.passengers.adults ? 'adult' : 
               index < data.searchParams.passengers.adults + data.searchParams.passengers.children ? 'child' : 'infant',
         first_name: '',
@@ -55,52 +112,59 @@ const Booking: React.FC = () => {
         nationality: ''
       }));
       
-      setPassengers(initialPassengers);
+      replace(initialPassengers);
+    } else if (storedRoundTripData) {
+      const data = JSON.parse(storedRoundTripData) as RoundTripBookingData;
+      setBookingData(data);
+      
+      const totalPassengers = data.searchParams.passengers.adults + 
+                             data.searchParams.passengers.children + 
+                             data.searchParams.passengers.infants;
+      
+      const initialPassengers: PassengerForm[] = Array.from({ length: totalPassengers }, (_, index) => ({
+        type: index < data.searchParams.passengers.adults ? 'adult' : 
+              index < data.searchParams.passengers.adults + data.searchParams.passengers.children ? 'child' : 'infant',
+        first_name: '',
+        last_name: '',
+        date_of_birth: '',
+        passport_number: '',
+        nationality: ''
+      }));
+      
+      replace(initialPassengers);
     } else {
       navigate('/search');
     }
-  }, [navigate]);
+  }, [navigate, replace]);
 
-  const handlePassengerChange = (index: number, field: string, value: string) => {
-    setPassengers(prev => prev.map((passenger, i) => 
-      i === index ? { ...passenger, [field]: value } : passenger
-    ));
-  };
-
-  const handleBooking = async () => {
+  const handleBooking = async (data: any) => {
     if (!bookingData || !user) return;
 
     setLoading(true);
     try {
-      // Calculate total amount
-      const totalAmount = getPrice(bookingData.flight, bookingData.searchParams.cabinClass) * passengers.length;
-      
-      // Prepare booking data for API
+      // Calculate total amount based on booking type
+      let totalAmount = 0;
+      let flights = [];
+      const numPassengers = data.passengers.length;
+
+      if ('flight' in bookingData) {
+        totalAmount = getPrice(bookingData.flight, bookingData.searchParams.cabinClass) * numPassengers;
+        flights.push({ flight_id: bookingData.flight.id, is_return_flight: false });
+      } else {
+        totalAmount = (getPrice(bookingData.outboundFlight, bookingData.searchParams.cabinClass) + getPrice(bookingData.returnFlight, bookingData.searchParams.cabinClass)) * numPassengers;
+        flights.push({ flight_id: bookingData.outboundFlight.id, is_return_flight: false });
+        flights.push({ flight_id: bookingData.returnFlight.id, is_return_flight: true });
+      }
+
       const bookingRequestData = {
-        trip_type: bookingData.searchParams.tripType,
+        trip_type: 'flight' in bookingData ? 'one-way' : 'round-trip',
         total_amount: totalAmount,
-        flights: [
-          {
-            flight_id: bookingData.flight.id,
-            is_return_flight: false
-          }
-        ],
-        passengers: passengers.map(passenger => ({
-          type: passenger.type,
-          first_name: passenger.first_name,
-          last_name: passenger.last_name,
-          date_of_birth: passenger.date_of_birth || null,
-          passport_number: passenger.passport_number || null,
-          nationality: passenger.nationality || null,
-          cabin_class: bookingData.searchParams.cabinClass
-        }))
+        flights: flights,
+        passengers: data.passengers.map((p: any) => ({ ...p, cabin_class: bookingData.searchParams.cabinClass }))
       };
       
       // Create booking using API client
       const bookingDetails = await createBooking(bookingRequestData);
-
-      // Clear session storage
-      sessionStorage.removeItem('selectedFlight');
 
       toast({
         title: 'Booking Successful',
@@ -127,11 +191,14 @@ const Booking: React.FC = () => {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
-  const totalAmount = getPrice(bookingData.flight, bookingData.searchParams.cabinClass) * passengers.length;
+  const numPassengers = fields.length > 0 ? fields.length : (bookingData.searchParams.passengers.adults + bookingData.searchParams.passengers.children + bookingData.searchParams.passengers.infants);
+  const totalAmount = 'flight' in bookingData
+    ? getPrice(bookingData.flight, bookingData.searchParams.cabinClass) * numPassengers
+    : (getPrice(bookingData.outboundFlight, bookingData.searchParams.cabinClass) + 
+       (bookingData.returnFlight ? getPrice(bookingData.returnFlight, bookingData.searchParams.cabinClass) : 0)) * numPassengers;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-sky-50">
-      {/* Navigation */}
       <nav className="bg-white/95 backdrop-blur-md border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -160,9 +227,8 @@ const Booking: React.FC = () => {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* Booking Form */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Flight Summary */}
+          <form onSubmit={handleSubmit(handleBooking)} className="lg:col-span-2 space-y-6">
+            {/* Flight Details Card */}
             <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
@@ -171,39 +237,111 @@ const Booking: React.FC = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center space-x-3">
-                    <img
-                      src={bookingData.flight.airline.logo_url || '/placeholder.svg'}
-                      alt={bookingData.flight.airline.name}
-                      className="w-8 h-8 object-contain"
-                    />
-                    <div>
-                      <p className="font-semibold">{bookingData.flight.airline.name}</p>
-                      <p className="text-sm text-gray-600">{bookingData.flight.flight_number}</p>
+                {/* ONE-WAY FLIGHT DISPLAY */}
+                {'flight' in bookingData && (
+                  <>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <img
+                          src={bookingData.flight.airline.logo_url || '/placeholder.svg'}
+                          alt={bookingData.flight.airline.name}
+                          className="w-8 h-8 object-contain"
+                        />
+                        <div>
+                          <p className="font-semibold">{bookingData.flight.airline.name}</p>
+                          <p className="text-sm text-gray-600">{bookingData.flight.flight_number}</p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="capitalize">
+                        {bookingData.searchParams.cabinClass.replace('-', ' ')}
+                      </Badge>
                     </div>
-                  </div>
-                  <Badge variant="outline" className="capitalize">
-                    {bookingData.searchParams.cabinClass.replace('-', ' ')}
-                  </Badge>
-                </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600">From</p>
+                        <p className="font-semibold">{bookingData.flight.origin_airport.iata_code}</p>
+                        <p className="text-sm">{bookingData.flight.origin_airport.city}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">To</p>
+                        <p className="font-semibold">{bookingData.flight.destination_airport.iata_code}</p>
+                        <p className="text-sm">{bookingData.flight.destination_airport.city}</p>
+                      </div>
+                    </div>
+                  </>
+                )}
                 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-600">From</p>
-                    <p className="font-semibold">{bookingData.flight.origin_airport.iata_code}</p>
-                    <p className="text-sm">{bookingData.flight.origin_airport.city}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">To</p>
-                    <p className="font-semibold">{bookingData.flight.destination_airport.iata_code}</p>
-                    <p className="text-sm">{bookingData.flight.destination_airport.city}</p>
-                  </div>
-                </div>
+                {/* ROUND-TRIP FLIGHT DISPLAY */}
+                {'outboundFlight' in bookingData && (
+                  <>
+                    {/* Outbound Flight */}
+                    <div className="mb-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-semibold text-blue-700">Outbound Flight</h3>
+                        <Badge variant="outline" className="capitalize">
+                          {bookingData.searchParams.cabinClass.replace('-', ' ')}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center space-x-3 mb-3">
+                        <img
+                          src={bookingData.outboundFlight.airline.logo_url || '/placeholder.svg'}
+                          alt={bookingData.outboundFlight.airline.name}
+                          className="w-8 h-8 object-contain"
+                        />
+                        <div>
+                          <p className="font-semibold">{bookingData.outboundFlight.airline.name}</p>
+                          <p className="text-sm text-gray-600">{bookingData.outboundFlight.flight_number}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-600">From</p>
+                          <p className="font-semibold">{bookingData.outboundFlight.origin_airport.iata_code}</p>
+                          <p className="text-sm">{bookingData.outboundFlight.origin_airport.city}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">To</p>
+                          <p className="font-semibold">{bookingData.outboundFlight.destination_airport.iata_code}</p>
+                          <p className="text-sm">{bookingData.outboundFlight.destination_airport.city}</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Return Flight */}
+                    <div className="mt-6 pt-6 border-t">
+                       <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-semibold text-indigo-700">Return Flight</h3>
+                      </div>
+                       <div className="flex items-center space-x-3 mb-3">
+                        <img
+                          src={bookingData.returnFlight.airline.logo_url || '/placeholder.svg'}
+                          alt={bookingData.returnFlight.airline.name}
+                          className="w-8 h-8 object-contain"
+                        />
+                        <div>
+                          <p className="font-semibold">{bookingData.returnFlight.airline.name}</p>
+                          <p className="text-sm text-gray-600">{bookingData.returnFlight.flight_number}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-600">From</p>
+                          <p className="font-semibold">{bookingData.returnFlight.origin_airport.iata_code}</p>
+                          <p className="text-sm">{bookingData.returnFlight.origin_airport.city}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">To</p>
+                          <p className="font-semibold">{bookingData.returnFlight.destination_airport.iata_code}</p>
+                          <p className="text-sm">{bookingData.returnFlight.destination_airport.city}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 
-            {/* Passenger Details */}
+            {/* Passenger Details Card */}
             <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
@@ -212,48 +350,58 @@ const Booking: React.FC = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                {passengers.map((passenger, index) => (
-                  <div key={index} className="p-4 border border-gray-200 rounded-lg space-y-4">
+                {fields.map((field, index) => (
+                  <div key={field.id} className="p-4 border border-gray-200 rounded-lg space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="font-semibold">Passenger {index + 1}</h3>
-                      <Badge variant="secondary" className="capitalize">{passenger.type}</Badge>
+                      <Badge variant="secondary" className="capitalize">{field.type}</Badge>
                     </div>
-                    
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor={`first_name_${index}`}>First Name</Label>
+                        <Label htmlFor={`first_name_${index}`}>First Name *</Label>
                         <Input
                           id={`first_name_${index}`}
-                          value={passenger.first_name}
-                          onChange={(e) => handlePassengerChange(index, 'first_name', e.target.value)}
-                          required
+                          {...register(`passengers.${index}.first_name`, { required: 'First name is required' })}
+                          placeholder="e.g., John"
                         />
+                        {errors.passengers?.[index]?.first_name && <p className="text-red-500 text-sm mt-1">{errors.passengers?.[index]?.first_name?.message}</p>}
                       </div>
                       <div>
-                        <Label htmlFor={`last_name_${index}`}>Last Name</Label>
+                        <Label htmlFor={`last_name_${index}`}>Last Name *</Label>
                         <Input
                           id={`last_name_${index}`}
-                          value={passenger.last_name}
-                          onChange={(e) => handlePassengerChange(index, 'last_name', e.target.value)}
-                          required
+                          {...register(`passengers.${index}.last_name`, { required: 'Last name is required' })}
+                          placeholder="e.g., Doe"
                         />
+                        {errors.passengers?.[index]?.last_name && <p className="text-red-500 text-sm mt-1">{errors.passengers?.[index]?.last_name?.message}</p>}
                       </div>
                       <div>
-                        <Label htmlFor={`date_of_birth_${index}`}>Date of Birth</Label>
+                        <Label htmlFor={`date_of_birth_${index}`}>Date of Birth *</Label>
                         <Input
                           id={`date_of_birth_${index}`}
                           type="date"
-                          value={passenger.date_of_birth}
-                          onChange={(e) => handlePassengerChange(index, 'date_of_birth', e.target.value)}
+                          {...register(`passengers.${index}.date_of_birth`, { required: 'Date of birth is required' })}
+                          placeholder="YYYY-MM-DD"
                         />
+                        {errors.passengers?.[index]?.date_of_birth && <p className="text-red-500 text-sm mt-1">{errors.passengers?.[index]?.date_of_birth?.message}</p>}
                       </div>
                       <div>
-                        <Label htmlFor={`passport_${index}`}>Passport Number</Label>
+                        <Label htmlFor={`passport_${index}`}>Passport Number *</Label>
                         <Input
                           id={`passport_${index}`}
-                          value={passenger.passport_number}
-                          onChange={(e) => handlePassengerChange(index, 'passport_number', e.target.value)}
+                          {...register(`passengers.${index}.passport_number`, { required: 'Passport number is required' })}
+                          placeholder="e.g., A12345678"
                         />
+                        {errors.passengers?.[index]?.passport_number && <p className="text-red-500 text-sm mt-1">{errors.passengers?.[index]?.passport_number?.message}</p>}
+                      </div>
+                      <div>
+                        <Label htmlFor={`nationality_${index}`}>Nationality *</Label>
+                        <Input
+                          id={`nationality_${index}`}
+                          {...register(`passengers.${index}.nationality`, { required: 'Nationality is required' })}
+                          placeholder="e.g., United States"
+                        />
+                        {errors.passengers?.[index]?.nationality && <p className="text-red-500 text-sm mt-1">{errors.passengers?.[index]?.nationality?.message}</p>}
                       </div>
                     </div>
                   </div>
@@ -261,7 +409,7 @@ const Booking: React.FC = () => {
               </CardContent>
             </Card>
 
-            {/* Payment Details */}
+            {/* Payment Details Card */}
             <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
@@ -271,92 +419,58 @@ const Booking: React.FC = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label htmlFor="card_name">Cardholder Name</Label>
-                  <Input
-                    id="card_name"
-                    value={cardDetails.name}
-                    onChange={(e) => setCardDetails(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="John Doe"
-                  />
+                  <Label htmlFor="card_name">Name on Card *</Label>
+                  <Input id="card_name" {...register('payment.name', { required: 'Name on card is required' })} placeholder="e.g., John Doe" />
+                  {errors.payment?.name && <p className="text-red-500 text-sm mt-1">{errors.payment.name.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="card_number">Card Number</Label>
-                  <Input
-                    id="card_number"
-                    value={cardDetails.number}
-                    onChange={(e) => setCardDetails(prev => ({ ...prev, number: e.target.value }))}
-                    placeholder="1234 5678 9012 3456"
-                  />
+                  <Label htmlFor="card_number">Card Number *</Label>
+                  <Input id="card_number" {...register('payment.number', { required: 'Card number is required', pattern: { value: /^\d{16}$/, message: 'Invalid card number' } })} placeholder="0000000000000000" />
+                  {errors.payment?.number && <p className="text-red-500 text-sm mt-1">{errors.payment.number.message}</p>}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="card_expiry">Expiry Date</Label>
-                    <Input
-                      id="card_expiry"
-                      value={cardDetails.expiry}
-                      onChange={(e) => setCardDetails(prev => ({ ...prev, expiry: e.target.value }))}
-                      placeholder="MM/YY"
-                    />
+                    <Label htmlFor="card_expiry">Expiry Date (MM/YY) *</Label>
+                    <Input id="card_expiry" {...register('payment.expiry', { required: 'Expiry date is required', pattern: { value: /^(0[1-9]|1[0-2])\/\d{2}$/, message: 'Invalid expiry date format (MM/YY)' } })} placeholder="MM/YY" />
+                    {errors.payment?.expiry && <p className="text-red-500 text-sm mt-1">{errors.payment.expiry.message}</p>}
                   </div>
                   <div>
-                    <Label htmlFor="card_cvc">CVC</Label>
-                    <Input
-                      id="card_cvc"
-                      value={cardDetails.cvc}
-                      onChange={(e) => setCardDetails(prev => ({ ...prev, cvc: e.target.value }))}
-                      placeholder="123"
-                    />
+                    <Label htmlFor="card_cvc">CVC *</Label>
+                    <Input id="card_cvc" {...register('payment.cvc', { required: 'CVC is required', pattern: { value: /^\d{3,4}$/, message: 'Invalid CVC' } })} placeholder="e.g., 123" />
+                    {errors.payment?.cvc && <p className="text-red-500 text-sm mt-1">{errors.payment.cvc.message}</p>}
                   </div>
                 </div>
               </CardContent>
             </Card>
-          </div>
 
-          {/* Booking Summary */}
+            {/* Submit Button */}
+            <div className="flex justify-end">
+              <Button type="submit" size="lg" disabled={!isValid || loading} className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+                {loading ? 'Processing...' : `Book Now - $${totalAmount.toFixed(2)}`}
+              </Button>
+            </div>
+          </form>
+
+          {/* Booking Summary Sidebar */}
           <div className="lg:col-span-1">
             <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-sm sticky top-24">
               <CardHeader>
                 <CardTitle>Booking Summary</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Flight Price</span>
-                    <span>${getPrice(bookingData.flight, bookingData.searchParams.cabinClass)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span>Passengers</span>
-                    <span>{passengers.length}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span>Taxes & Fees</span>
-                    <span>$0</span>
-                  </div>
-                  <div className="border-t pt-2">
-                    <div className="flex justify-between font-semibold text-lg">
-                      <span>Total</span>
-                      <span>${totalAmount}</span>
-                    </div>
-                  </div>
+                <div className="flex justify-between">
+                  <span>Passengers</span>
+                  <span>{numPassengers}</span>
                 </div>
-
-                <Button
-                  className="w-full bg-blue-600 hover:bg-blue-700"
-                  onClick={handleBooking}
-                  disabled={loading || passengers.some(p => !p.first_name || !p.last_name)}
-                >
-                  {loading ? (
-                    <div className="flex items-center space-x-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      <span>Processing...</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center space-x-2">
-                      <CheckCircle className="h-4 w-4" />
-                      <span>Confirm Booking</span>
-                    </div>
-                  )}
-                </Button>
+                <div className="flex justify-between">
+                  <span>Cabin Class</span>
+                  <span className="capitalize">{bookingData.searchParams.cabinClass.replace('-', ' ')}</span>
+                </div>
+                <hr />
+                <div className="flex justify-between font-bold text-lg">
+                  <span>Total</span>
+                  <span>${totalAmount.toFixed(2)}</span>
+                </div>
               </CardContent>
             </Card>
           </div>

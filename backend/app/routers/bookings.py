@@ -4,7 +4,8 @@ from app.schemas.booking import BookingCreate, BookingUpdate, BookingResponse, B
 from app.services.auth import get_current_user
 from app.services.email import EmailNotificationService
 from app.services.booking import (
-    create_booking, get_booking_details_by_id, generate_booking_reference, get_all_booking_details_for_user
+    create_booking, get_booking_details_by_id, generate_booking_reference, 
+    get_all_booking_details_for_user, validate_flight_availability, update_seat_availability, rollback_seat_deductions
 )
 from app.database.init_db import get_supabase_client
 
@@ -14,23 +15,34 @@ router = APIRouter()
 @router.post("", response_model=BookingDetailResponse)
 async def create_new_booking(booking_data: BookingCreate, current_user: dict = Depends(get_current_user)):
     """
-    Create a new booking for the authenticated user
+    Create a new booking for the authenticated user and deduct seats from flights.
+    Supports both one-way and round-trip bookings with proper seat availability validation.
     """
     # Convert Pydantic model to dictionary
     booking_dict = booking_data.dict()
     
-    # Create booking using the service
+    # For round-trip, validate that one flight is marked as return
+    if booking_dict.get("trip_type") == "round-trip":
+        return_flights = [f for f in booking_dict.get("flights", []) if f.get("is_return_flight")]
+        if len(return_flights) != 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Round-trip bookings must have exactly one flight marked as return"
+            )
+    
+    # Create the booking using the enhanced booking service
+    # This will handle all validation, seat deduction, and rollback if needed
     try:
         booking_details = await create_booking(current_user["id"], booking_dict)
         return booking_details
     except HTTPException as e:
-        # Re-raise HTTP exceptions
+        # Re-raise HTTP exceptions from the booking service
         raise e
     except Exception as e:
-        # Handle any other exceptions
+        # For any other exceptions, wrap in an HTTP exception
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create booking: {str(e)}"
+            detail=f"An unexpected error occurred while creating the booking: {str(e)}"
         )
 
 

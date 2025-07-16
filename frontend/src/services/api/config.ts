@@ -3,6 +3,9 @@
 // Base URL for the API
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 
+// Log the API base URL for debugging
+console.log('Using API base URL:', API_BASE_URL);
+
 // Default request timeout in milliseconds
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
 

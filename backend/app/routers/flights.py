@@ -21,26 +21,38 @@ async def search_flights(
     from_code: str,
     to_code: str,
     departure_date: str,
+    return_date: str = None,
     cabin_class: Literal['economy', 'premium-economy', 'business', 'first'] = 'economy',
     adults: int = 1,
     children: int = 0,
     infants: int = 0,
+    sort_by: Literal['price', 'duration', 'departure_time', 'arrival_time'] = None,
+    sort_order: Literal['asc', 'desc'] = 'asc',
+    min_price: float = None,
+    max_price: float = None,
+    airline_code: str = None,
+    max_duration: int = None,  # in minutes
 ):
     """
     Search for flights based on origin, destination, date, and other criteria.
+    Supports round-trip searches, filtering, and sorting.
     """
     passengers = Passengers(adults=adults, children=children, infants=infants)
+    trip_type = 'round-trip' if return_date else 'one-way'
+    
     params = FlightSearchParams(
         from_code=from_code,
         to_code=to_code,
         departure_date=departure_date,
+        return_date=return_date,
         passengers=passengers,
         cabin_class=cabin_class,
-        trip_type='one-way'
+        trip_type=trip_type
     )
 
     total_passengers = params.passengers.adults + params.passengers.children
     cabin_availability_column = f"{params.cabin_class.replace('-', '_')}_available"
+    cabin_price_column = f"{params.cabin_class.replace('-', '_')}_price"
 
     try:
         warnings.warn(
@@ -61,28 +73,117 @@ async def search_flights(
             return []  # No flights if destination airport not found
         destination_airport_id = destination_airport_response.data[0]['id']
 
-        # Now, query flights using the airport IDs
-        query = supabase.table('flights').select(
+        # Query for outbound flights
+        outbound_query = supabase.table('flights').select(
             '*, airline:airlines(*), origin_airport:airports!origin_airport_id(*), destination_airport:airports!destination_airport_id(*)'
         )
-        query = query.eq('origin_airport_id', origin_airport_id)
-        query = query.eq('destination_airport_id', destination_airport_id)
+        outbound_query = outbound_query.eq('origin_airport_id', origin_airport_id)
+        outbound_query = outbound_query.eq('destination_airport_id', destination_airport_id)
+        outbound_query = outbound_query.gte("departure_time", f"{params.departure_date}T00:00:00") \
+                                      .lt("departure_time", f"{params.departure_date}T23:59:59")
 
-        query = query.gte("departure_time", f"{params.departure_date}T00:00:00") \
-                     .lt("departure_time", f"{params.departure_date}T23:59:59")
-
+        # Apply common filters
         if total_passengers > 0:
-            query = query.gte(cabin_availability_column, total_passengers)
-
-        response = query.execute()
-
-        if hasattr(response, 'error') and response.error:
+            outbound_query = outbound_query.gte(cabin_availability_column, total_passengers)
+        
+        # Apply price filters if specified
+        if min_price is not None:
+            outbound_query = outbound_query.gte(cabin_price_column, min_price)
+        if max_price is not None:
+            outbound_query = outbound_query.lte(cabin_price_column, max_price)
+            
+        # Apply duration filter if specified
+        if max_duration is not None:
+            outbound_query = outbound_query.lte('duration_minutes', max_duration)
+            
+        # Apply airline filter if specified
+        if airline_code:
+            airline_response = supabase.table('airlines').select('id').eq('iata_code', airline_code.upper()).execute()
+            if airline_response.data:
+                airline_id = airline_response.data[0]['id']
+                outbound_query = outbound_query.eq('airline_id', airline_id)
+        
+        # Apply sorting
+        if sort_by:
+            # Handle price sorting specially since it depends on cabin class
+            if sort_by == 'price':
+                outbound_query = outbound_query.order(cabin_price_column, desc=(sort_order == 'desc'))
+            else:
+                outbound_query = outbound_query.order(sort_by, desc=(sort_order == 'desc'))
+        
+        outbound_response = outbound_query.execute()
+        
+        if hasattr(outbound_response, 'error') and outbound_response.error:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {response.error.message}"
+                detail=f"Database error: {outbound_response.error.message}"
             )
+        
+        outbound_flights = outbound_response.data
+        
+        # For one-way trips, return just the outbound flights
+        if trip_type == 'one-way':
+            return outbound_flights
+        
+        # For round-trips, also query return flights
+        return_query = supabase.table('flights').select(
+            '*, airline:airlines(*), origin_airport:airports!origin_airport_id(*), destination_airport:airports!destination_airport_id(*)'
+        )
+        return_query = return_query.eq('origin_airport_id', destination_airport_id)  # Swap origin and destination
+        return_query = return_query.eq('destination_airport_id', origin_airport_id)
+        return_query = return_query.gte("departure_time", f"{params.return_date}T00:00:00") \
+                                  .lt("departure_time", f"{params.return_date}T23:59:59")
+        
+        # Apply the same filters to return flights
+        if total_passengers > 0:
+            return_query = return_query.gte(cabin_availability_column, total_passengers)
+            
+        if min_price is not None:
+            return_query = return_query.gte(cabin_price_column, min_price)
+        if max_price is not None:
+            return_query = return_query.lte(cabin_price_column, max_price)
+            
+        if max_duration is not None:
+            return_query = return_query.lte('duration_minutes', max_duration)
+            
+        if airline_code:
+            if airline_response and airline_response.data:
+                return_query = return_query.eq('airline_id', airline_id)
+        
+        # Apply the same sorting to return flights
+        if sort_by:
+            if sort_by == 'price':
+                return_query = return_query.order(cabin_price_column, desc=(sort_order == 'desc'))
+            else:
+                return_query = return_query.order(sort_by, desc=(sort_order == 'desc'))
+        
+        return_response = return_query.execute()
+        
+        if hasattr(return_response, 'error') and return_response.error:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error: {return_response.error.message}"
+            )
+        
+        # Combine outbound and return flights
+        # Mark outbound flights
+        for flight in outbound_flights:
+            flight['is_return'] = False
+            
+        # Mark return flights
+        return_flights = return_response.data
+        for flight in return_flights:
+            flight['is_return'] = True
+            
+        # Return combined results
+        return outbound_flights + return_flights
 
-        return response.data
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}"
+        )
 
     except Exception as e:
         print(f"An unexpected error occurred: {e}")

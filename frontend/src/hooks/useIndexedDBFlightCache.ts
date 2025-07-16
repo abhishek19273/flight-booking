@@ -52,20 +52,56 @@ export const useIndexedDBFlightCache = (): UseIndexedDBFlightCacheResult => {
     };
   }, []);
 
-  // Get cached results
-  const getCachedResults = useCallback(async (
-    searchParams: FlightSearchParams
-  ): Promise<FlightWithDetails[] | null> => {
-    if (!isCacheAvailable) return null;
+  // Get cached results for search parameters
+  const getCachedResults = useCallback(
+    async (searchParams: FlightSearchParams): Promise<FlightWithDetails[] | null> => {
+      if (!isCacheAvailable) return null;
 
-    try {
-      // Use a 30-minute cache validity period
-      return await getCachedFlightSearchResults(searchParams, 30 * 60 * 1000);
-    } catch (error) {
-      console.error('Error retrieving cached flight results:', error);
-      return null;
-    }
-  }, [isCacheAvailable]);
+      try {
+        console.log('Attempting to get cached flight results for:', searchParams);
+        // Add a safety check to prevent using invalid dates in cache key generation
+        const safeParams = { ...searchParams };
+        
+        // Validate departure date
+        if (safeParams.departureDate) {
+          try {
+            const date = new Date(safeParams.departureDate);
+            if (isNaN(date.getTime())) {
+              console.warn('Invalid departure date in cache params, using current date');
+              safeParams.departureDate = new Date().toISOString().split('T')[0];
+            }
+          } catch (e) {
+            console.warn('Error parsing departure date for cache:', e);
+            safeParams.departureDate = new Date().toISOString().split('T')[0];
+          }
+        }
+        
+        // Validate return date if present
+        if (safeParams.returnDate) {
+          try {
+            const date = new Date(safeParams.returnDate);
+            if (isNaN(date.getTime())) {
+              console.warn('Invalid return date in cache params, using departure date + 7 days');
+              const departureDate = new Date(safeParams.departureDate);
+              departureDate.setDate(departureDate.getDate() + 7);
+              safeParams.returnDate = departureDate.toISOString().split('T')[0];
+            }
+          } catch (e) {
+            console.warn('Error parsing return date for cache:', e);
+            const departureDate = new Date(safeParams.departureDate);
+            departureDate.setDate(departureDate.getDate() + 7);
+            safeParams.returnDate = departureDate.toISOString().split('T')[0];
+          }
+        }
+        
+        return await getCachedFlightSearchResults(safeParams);
+      } catch (error) {
+        console.error('Error getting cached flight results:', error);
+        return null;
+      }
+    },
+    [isCacheAvailable]
+  );
 
   // Save results to cache
   const saveResults = useCallback(async (
@@ -75,7 +111,43 @@ export const useIndexedDBFlightCache = (): UseIndexedDBFlightCacheResult => {
     if (!isCacheAvailable) return;
 
     try {
-      await saveFlightSearchResults(searchParams, results);
+      console.log('Saving flight results to cache:', results.length, 'flights');
+      // Add a safety check to prevent using invalid dates in cache key generation
+      const safeParams = { ...searchParams };
+      
+      // Validate departure date
+      if (safeParams.departureDate) {
+        try {
+          const date = new Date(safeParams.departureDate);
+          if (isNaN(date.getTime())) {
+            console.warn('Invalid departure date in save cache params, using current date');
+            safeParams.departureDate = new Date().toISOString().split('T')[0];
+          }
+        } catch (e) {
+          console.warn('Error parsing departure date for saving cache:', e);
+          safeParams.departureDate = new Date().toISOString().split('T')[0];
+        }
+      }
+      
+      // Validate return date if present
+      if (safeParams.returnDate) {
+        try {
+          const date = new Date(safeParams.returnDate);
+          if (isNaN(date.getTime())) {
+            console.warn('Invalid return date in save cache params, using departure date + 7 days');
+            const departureDate = new Date(safeParams.departureDate);
+            departureDate.setDate(departureDate.getDate() + 7);
+            safeParams.returnDate = departureDate.toISOString().split('T')[0];
+          }
+        } catch (e) {
+          console.warn('Error parsing return date for saving cache:', e);
+          const departureDate = new Date(safeParams.departureDate);
+          departureDate.setDate(departureDate.getDate() + 7);
+          safeParams.returnDate = departureDate.toISOString().split('T')[0];
+        }
+      }
+      
+      await saveFlightSearchResults(safeParams, results);
     } catch (error) {
       console.error('Error saving flight results to cache:', error);
     }

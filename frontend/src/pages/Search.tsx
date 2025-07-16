@@ -2,11 +2,88 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import FlightSearchForm from '@/components/FlightSearchForm';
 import { ModifySearchForm } from '@/components/ModifySearchForm';
-import FlightList from '@/components/FlightList';
-import { useFlightSearch, FlightSearchParams, FlightWithDetails } from '@/hooks/useFlightSearch';
+import FlightCard from '@/components/FlightCard';
+import RoundTripFlightCard from '@/components/RoundTripFlightCard';
+import { useFlightSearch, FlightSearchParams } from '@/hooks/useFlightSearch';
 import { useIndexedDBFlightCache } from '@/hooks/useIndexedDBFlightCache';
 import { FlightResultsSkeleton } from '@/components/FlightResultsSkeleton';
 import { AlertCircle, Frown, Plane, ArrowLeft, WifiOff, Database } from 'lucide-react';
+import { CabinClass, FlightWithDetails } from '@/types';
+
+// FlightList component to display flights
+const FlightList: React.FC<{ 
+  flights: FlightWithDetails[]; 
+  cabinClass: CabinClass; 
+  onSelectFlight: (flight: FlightWithDetails) => void;
+  onSelectRoundTrip: (outbound: FlightWithDetails, returnFlight: FlightWithDetails) => void;
+  isRoundTrip: boolean;
+}> = ({ flights, cabinClass, onSelectFlight, onSelectRoundTrip, isRoundTrip }) => {
+  if (flights.length === 0) {
+    return (
+      <div className="text-center py-10">
+        <p className="text-white text-lg">No flights found matching your criteria.</p>
+      </div>
+    );
+  }
+
+  // For round trips, organize flights by outbound and return
+  if (isRoundTrip) {
+    const outboundFlights = flights.filter(flight => !flight.is_return);
+    const returnFlights = flights.filter(flight => flight.is_return);
+    
+    // If we have both outbound and return flights, display them as pairs
+    if (outboundFlights.length > 0 && returnFlights.length > 0) {
+      // Create all possible combinations of outbound and return flights
+      const combinations: { outbound: FlightWithDetails, return: FlightWithDetails }[] = [];
+      
+      // Limit to a reasonable number of combinations to avoid performance issues
+      const maxCombinations = 20;
+      let count = 0;
+      
+      for (const outbound of outboundFlights) {
+        for (const returnFlight of returnFlights) {
+          combinations.push({ outbound, return: returnFlight });
+          count++;
+          if (count >= maxCombinations) break;
+        }
+        if (count >= maxCombinations) break;
+      }
+      
+      return (
+        <div className="space-y-6">
+          <div className="bg-blue-900/30 p-4 rounded-lg">
+            <h3 className="text-lg font-bold text-white mb-2">Round Trip Options</h3>
+            <p className="text-sm text-blue-200">Showing {combinations.length} round trip combinations</p>
+          </div>
+          
+          {combinations.map((combo, index) => (
+            <RoundTripFlightCard
+              key={`${combo.outbound.id}-${combo.return.id}`}
+              outboundFlight={combo.outbound}
+              returnFlight={combo.return}
+              cabinClass={cabinClass}
+              onSelectFlights={(outbound, returnFlight) => onSelectRoundTrip(outbound, returnFlight)}
+            />
+          ))}
+        </div>
+      );
+    }
+  }
+
+  // Default view for one-way trips or if round-trip organization fails
+  return (
+    <div className="space-y-4">
+      {flights.map((flight) => (
+        <FlightCard
+          key={flight.id}
+          flight={flight}
+          cabinClass={cabinClass}
+          onSelectFlight={onSelectFlight}
+        />
+      ))}
+    </div>
+  );
+};
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -54,55 +131,101 @@ const SearchPage: React.FC = () => {
     return null;
   }, [searchParams]);
 
-  const handleSearch = async (params: FlightSearchParams, updateUrl = true) => {
-    if (updateUrl) {
-      const newSearchParams = new URLSearchParams();
-      newSearchParams.set('from', params.from);
-      newSearchParams.set('to', params.to);
-      newSearchParams.set('departureDate', params.departureDate);
-      if (params.returnDate) newSearchParams.set('returnDate', params.returnDate);
-      newSearchParams.set('adults', params.passengers.adults.toString());
-      newSearchParams.set('children', params.passengers.children.toString());
-      newSearchParams.set('infants', params.passengers.infants.toString());
-      newSearchParams.set('cabinClass', params.cabinClass);
-      newSearchParams.set('tripType', params.tripType);
-      setSearchParams(newSearchParams);
-    }
-
-    setCurrentSearch(params);
+  const handleSearch = async (params: FlightSearchParams, updateURL = true) => {
     setSearched(true);
-    setUsingCachedResults(false);
-
+    
+    // Validate and ensure all required parameters are present with defaults
+    const validatedParams: FlightSearchParams = {
+      ...params,
+      from: params.from || '',
+      to: params.to || '',
+      departureDate: params.departureDate || new Date().toISOString(),
+      tripType: params.tripType || 'one-way',
+      cabinClass: params.cabinClass || 'economy',
+      passengers: {
+        adults: params.passengers?.adults || 1,
+        children: params.passengers?.children || 0,
+        infants: params.passengers?.infants || 0
+      }
+    };
+    
+    setCurrentSearch(validatedParams);
+    
+    if (updateURL) {
+      // Update URL with search parameters
+      const newParams = new URLSearchParams();
+      newParams.set('from', validatedParams.from);
+      newParams.set('to', validatedParams.to);
+      newParams.set('departureDate', validatedParams.departureDate);
+      newParams.set('tripType', validatedParams.tripType);
+      newParams.set('cabinClass', validatedParams.cabinClass);
+      newParams.set('adults', validatedParams.passengers.adults.toString());
+      newParams.set('children', validatedParams.passengers.children.toString());
+      newParams.set('infants', validatedParams.passengers.infants.toString());
+      
+      if (validatedParams.tripType === 'round-trip' && validatedParams.returnDate) {
+        newParams.set('returnDate', validatedParams.returnDate);
+      }
+      
+      setSearchParams(newParams);
+    }
+    
     try {
+      console.log('Starting flight search with validated params:', validatedParams);
+      
+      // Clear expired cache entries
+      if (isCacheAvailable) {
+        await clearExpired();
+      }
+      setUsingCachedResults(false);
+
       // First check for cached results if we're offline or if cache is available
       if (isCacheAvailable) {
-        const cachedResults = await getCachedResults(params);
+        const cachedResults = await getCachedResults(validatedParams);
         
         if (isOffline && cachedResults) {
+          console.log('Using cached results while offline');
           setResults(cachedResults);
           setUsingCachedResults(true);
           return;
-        }
-        
-        // If online but we have cached results, use them while fetching fresh data
-        if (cachedResults) {
-          setResults(cachedResults);
-          setUsingCachedResults(true);
         }
       }
       
       // If we're online, fetch fresh results
       if (!isOffline) {
-        const searchResults = await searchFlights(params);
-        setResults(searchResults);
-        setUsingCachedResults(false);
-        
-        // Cache the results for future use
-        if (isCacheAvailable) {
-          await saveResults(params, searchResults);
+        try {
+          console.log('Fetching fresh results from API with validated params');
+          const searchResults = await searchFlights(validatedParams);
+          console.log('API search successful, got results:', searchResults.length);
+          setResults(searchResults);
+          setUsingCachedResults(false);
+          
+          // Cache the results for future use
+          if (isCacheAvailable && searchResults.length > 0) {
+            await saveResults(validatedParams, searchResults);
+          }
+        } catch (apiError) {
+          console.error('API search failed:', apiError);
+          
+          // Try to get from cache as fallback
+          if (isCacheAvailable) {
+            const cachedResults = await getCachedResults(validatedParams);
+            if (cachedResults && cachedResults.length > 0) {
+              console.log('Using cached results after API failure');
+              setResults(cachedResults);
+              setUsingCachedResults(true);
+              return;
+            }
+          }
+          
+          // No API results and no cache - show error
+          setResults([]);
+          throw apiError;
         }
-      } else if (!isCacheAvailable || !(await getCachedResults(params))) {
+      } else if (!isCacheAvailable || !(await getCachedResults(validatedParams))) {
         // We're offline and have no cached results
+        console.warn('No internet connection and no cached results available');
+        setResults([]);
         throw new Error('No internet connection and no cached results available');
       }
     } catch (err) {
@@ -135,7 +258,7 @@ const SearchPage: React.FC = () => {
         description: 'Please sign in to book a flight.',
         variant: 'destructive',
       });
-      navigate('/auth/login');
+      navigate('/login');
       return;
     }
 
@@ -145,6 +268,34 @@ const SearchPage: React.FC = () => {
         searchParams: currentSearch,
       };
       sessionStorage.setItem('selectedFlight', JSON.stringify(bookingData));
+      navigate('/booking');
+    } else {
+      toast({
+        title: 'Error',
+        description: 'Could not retrieve search parameters. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleSelectRoundTrip = (outboundFlight: FlightWithDetails, returnFlight: FlightWithDetails) => {
+    if (!user) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please sign in to book a flight.',
+        variant: 'destructive',
+      });
+      navigate('/login');
+      return;
+    }
+
+    if (currentSearch) {
+      const bookingData = {
+        outboundFlight: outboundFlight,
+        returnFlight: returnFlight,
+        searchParams: currentSearch,
+      };
+      sessionStorage.setItem('selectedRoundTrip', JSON.stringify(bookingData));
       navigate('/booking');
     } else {
       toast({
@@ -250,13 +401,13 @@ const SearchPage: React.FC = () => {
               </Card>
             )}
             {results.length > 0 && (
-              <>
-                <FlightList 
-                  flights={results} 
-                  onSelectFlight={handleSelectFlight} 
-                  cabinClass={currentSearch?.cabinClass || 'economy'}
-                />
-              </>
+              <FlightList 
+                flights={results} 
+                cabinClass={currentSearch?.cabinClass || 'economy'}
+                onSelectFlight={handleSelectFlight}
+                onSelectRoundTrip={handleSelectRoundTrip}
+                isRoundTrip={currentSearch?.tripType === 'round-trip'}
+              />
             )}
           </main>
         </div>

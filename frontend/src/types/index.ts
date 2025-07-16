@@ -47,6 +47,7 @@ export interface FlightWithDetails extends Flight {
   airline: Airline;
   origin_airport: Airport;
   destination_airport: Airport;
+  is_return?: boolean; // Flag to indicate if this is a return flight in a round trip
 }
 
 // Flight search types
@@ -59,13 +60,23 @@ export interface PassengerCount {
 }
 
 export interface FlightSearchParams {
+  // Support both naming conventions for flexibility
   from: string;
   to: string;
+  from_code?: string; // Added for compatibility with backend API
+  to_code?: string; // Added for compatibility with backend API
   departureDate: string;
   returnDate?: string;
   passengers: PassengerCount;
   cabinClass: CabinClass;
   tripType: 'one-way' | 'round-trip';
+  // Filtering and sorting parameters
+  sortBy?: 'price' | 'duration' | 'departure_time' | 'arrival_time';
+  sortOrder?: 'asc' | 'desc';
+  minPrice?: number;
+  maxPrice?: number;
+  airlineCode?: string;
+  maxDuration?: number; // in minutes
 }
 
 interface FlightAvailability {
