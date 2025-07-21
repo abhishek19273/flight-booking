@@ -63,7 +63,6 @@ except Exception as e:
         logger.info("Using database URL with masked credentials")
 
 
-from sqlalchemy.pool import NullPool
 # Create engine with proper async configuration
 engine = create_async_engine(
     DB_URL,
