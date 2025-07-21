@@ -65,16 +65,12 @@ except Exception as e:
 
 # Create engine with proper async configuration
 engine = create_async_engine(
-    DB_URL,
+    DB_URL, 
     echo=os.getenv("SQL_ECHO", "false").lower() == "true",
     future=True,
     pool_pre_ping=True,
     pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
-    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
-    # Basic pgbouncer compatibility settings - only use what's supported
-    connect_args={
-        "statement_cache_size": 0  # Disable statement caching for pgbouncer compatibility
-    }
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10"))
 )
 
 # Create session factory for async sessions
@@ -118,16 +114,13 @@ async def init_db() -> bool:
         bool: True if connection was successful
     """
     try:
-        # Create a simple session without transaction for pgbouncer compatibility
-        session = AsyncSessionLocal()
-        try:
+        # Create connection to verify settings
+        async with engine.begin() as conn:
             # Simple query to verify connection
-            result = await session.execute(text('SELECT 1'))
-            await session.commit()
-            logger.info("✅ SQLAlchemy database connection established successfully!")
-            return True
-        finally:
-            await session.close()
+            await conn.execute(text('SELECT 1'))
+        
+        logger.info("✅ SQLAlchemy database connection established successfully!")
+        return True
     except Exception as e:
         logger.error(f"❌ Database connection failed: {e}", exc_info=True)
         raise
